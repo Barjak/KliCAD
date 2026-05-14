@@ -58,12 +58,9 @@ KICAD_API_SERVER::KICAD_API_SERVER( bool aAutoStart ) :
     if( !aAutoStart )
         return;
 
-    if( !Pgm().GetCommonSettings()->m_Api.enable_server )
-    {
-        wxLogTrace( traceApi, "Server: disabled by user preferences." );
-        return;
-    }
-
+    // Local fork: API server is hardcoded always-on. The api.enable_server
+    // preference is ignored on construction (mirror change in
+    // EDA_BASE_FRAME::CommonSettingsChanged keeps it from being stopped later).
     Start();
 }
 

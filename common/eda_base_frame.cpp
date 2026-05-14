@@ -810,11 +810,10 @@ void EDA_BASE_FRAME::CommonSettingsChanged( int aFlags )
     COMMON_SETTINGS* settings = Pgm().GetCommonSettings();
 
 #ifdef KICAD_IPC_API
-    bool running = Pgm().GetApiServer().Running();
-
-    if( running && !settings->m_Api.enable_server )
-        Pgm().GetApiServer().Stop();
-    else if( !running && settings->m_Api.enable_server )
+    // Local fork: API server is hardcoded always-on; don't toggle on the
+    // api.enable_server preference. If the server somehow isn't running
+    // (start failure on launch), bring it up.
+    if( !Pgm().GetApiServer().Running() )
         Pgm().GetApiServer().Start();
 #endif
 
