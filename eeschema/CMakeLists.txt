@@ -729,9 +729,21 @@ if( APPLE )
     get_filename_component( ABS_LIBNGSPICE ${NGSPICE_LIBRARY} ABSOLUTE )
     get_filename_component( LIBNGSPICE_PATH ${ABS_LIBNGSPICE} DIRECTORY )
 
-    install( DIRECTORY "${LIBNGSPICE_PATH}/"
-            DESTINATION "${OSX_BUNDLE_INSTALL_PLUGIN_DIR}/sim"
-            FILES_MATCHING PATTERN "*.dylib")
+    # Local fork: install the resolved libngspice dylib (and recreate the
+    # versionless symlink locally in the install dir). install(DIRECTORY)
+    # preserves symlinks from /usr/local/lib that point at ../Cellar/... which
+    # become broken inside the .app bundle and trip RefixupMacOS.
+    get_filename_component( REAL_LIBNGSPICE ${ABS_LIBNGSPICE} REALPATH )
+    install( FILES ${REAL_LIBNGSPICE}
+             DESTINATION "${OSX_BUNDLE_INSTALL_PLUGIN_DIR}/sim" )
+    install( CODE "
+        file( REMOVE \"\${CMAKE_INSTALL_PREFIX}/${OSX_BUNDLE_INSTALL_PLUGIN_DIR}/sim/libngspice.dylib\" )
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E create_symlink
+                libngspice.0.dylib libngspice.dylib
+            WORKING_DIRECTORY \"\${CMAKE_INSTALL_PREFIX}/${OSX_BUNDLE_INSTALL_PLUGIN_DIR}/sim\"
+        )
+    " )
     install( DIRECTORY "${LIBNGSPICE_PATH}/ngspice"
              DESTINATION "${OSX_BUNDLE_INSTALL_PLUGIN_DIR}/sim" )
 
