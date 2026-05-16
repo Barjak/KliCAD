@@ -362,6 +362,7 @@ if( KICAD_IPC_API )
         api/bindings_gerber_info.cpp
         api/bindings_gui.cpp
         api/bindings_jobset.cpp
+        api/bindings_library_tables.cpp
         api/bindings_pcb_import.cpp
         api/bindings_pcb_upgrade.cpp
         api/bindings_render.cpp
