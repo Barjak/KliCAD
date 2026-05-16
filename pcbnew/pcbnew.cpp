@@ -91,6 +91,7 @@
 #include <api/headless_board_context.h>
 #include <board.h>
 #include <board_loader.h>
+#include "api/klicad_kiface_register.h"
 #endif
 
 
@@ -636,6 +637,10 @@ bool IFACE::OnKifaceStart( PGM_BASE* aProgram, int aCtlBits, KIWAY* aKiway )
 
 #if defined( KICAD_IPC_API )
     m_kiway = aKiway;
+
+    // KliCAD: register kiface-resident pybind11 bindings now that this
+    // kiface is loaded.  See pcbnew/api/klicad_kiface_register.h.
+    klicad_register_pcbnew_bindings();
 #endif
 
     m_jobHandler = std::make_unique<PCBNEW_JOBS_HANDLER>( aKiway );

@@ -519,9 +519,13 @@ set( PCBNEW_COMMON_SRCS
     )
 
 if( KICAD_IPC_API )
+    # KliCAD kiface-resident bindings: registered at OnKifaceStart via
+    # klicad_kiface_register, NOT via PYBIND11_EMBEDDED_MODULE (which can't
+    # be used in a lazy-loaded kiface — see klicad_kiface_register.h).
     set( PCBNEW_SRCS ${PCBNEW_SRCS}
         api/api_handler_pcb.cpp
         api/board_context.cpp
+        api/klicad_kiface_register.cpp
         )
 endif()
 
