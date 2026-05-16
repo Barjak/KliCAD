@@ -343,6 +343,8 @@ if( KICAD_IPC_API )
         api/api_plugin.cpp
         api/api_plugin_manager.cpp
         api/api_server.cpp
+        api/bindings_drc.cpp
+        api/bindings_erc.cpp
         api/kicad_native_module.cpp
         api/python_embedded.cpp
         api/python_manager.cpp
