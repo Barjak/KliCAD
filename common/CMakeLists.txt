@@ -345,9 +345,12 @@ if( KICAD_IPC_API )
         api/api_server.cpp
         api/bindings_drc.cpp
         api/bindings_erc.cpp
+        api/bindings_export_3d.cpp
+        api/bindings_export_drill.cpp
         api/bindings_export_gerbers.cpp
         api/bindings_export_sch_plot.cpp
         api/bindings_gerber_diff.cpp
+        api/bindings_render.cpp
         api/kicad_native_module.cpp
         api/python_embedded.cpp
         api/python_manager.cpp
