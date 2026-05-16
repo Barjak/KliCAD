@@ -348,8 +348,11 @@ if( KICAD_IPC_API )
         api/bindings_export_3d.cpp
         api/bindings_export_drill.cpp
         api/bindings_export_gerbers.cpp
+        api/bindings_export_sch_bom.cpp
+        api/bindings_export_sch_netlist.cpp
         api/bindings_export_sch_plot.cpp
         api/bindings_gerber_diff.cpp
+        api/bindings_pcb_upgrade.cpp
         api/bindings_render.cpp
         api/kicad_native_module.cpp
         api/python_embedded.cpp
