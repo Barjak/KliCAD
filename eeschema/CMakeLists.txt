@@ -495,10 +495,16 @@ set( EESCHEMA_SRCS
     )
 
 if( KICAD_IPC_API )
+    # KliCAD kiface-resident bindings: registered at OnKifaceStart via
+    # klicad_kiface_register, NOT via PYBIND11_EMBEDDED_MODULE (which can't
+    # be used in a lazy-loaded kiface — see klicad_kiface_register.h).
     set( EESCHEMA_SRCS
         ${EESCHEMA_SRCS}
         api/api_handler_sch.cpp
+        api/bindings_sch_actions.cpp
+        api/bindings_schematic_state.cpp
         api/headless_sch_context.cpp
+        api/klicad_kiface_register.cpp
         api/sch_context.cpp
     )
 endif()

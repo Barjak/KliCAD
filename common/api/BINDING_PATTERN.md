@@ -2,7 +2,60 @@
 
 Reference doc for agents binding KiCad subsystems into the `kicad_native_*`
 pybind11 modules. Each agent owns one subsystem (one new `bindings_*.cpp`
-TU in this directory). The pattern below is the contract.
+TU). **There are two pattern variants** depending on whether the binding
+needs symbols from a lazy-loaded kiface — choose carefully:
+
+## Pattern A: libkicommon-resident (`PYBIND11_EMBEDDED_MODULE`)
+
+Use when the binding only needs symbols available in `libkicommon.dylib`
+(common settings, jobs, GUI control, etc.).
+
+- TU lives in `common/api/bindings_<name>.cpp`.
+- Uses `PYBIND11_EMBEDDED_MODULE(kicad_native_<name>, m) { ... }`.
+- Added to `KICOMMON_SRCS` in `common/CMakeLists.txt`.
+- The macro's static initializer runs at process start, before
+  `KICAD_API_SERVER::Start` calls `py::initialize_interpreter` — so the
+  module gets registered in CPython's inittab in time.
+
+## Pattern B: kiface-resident (register-on-load)
+
+Use when the binding needs symbols from a specific kiface (eeschema's
+`SCH_SYMBOL`, pcbnew's `BOARD`, etc.) — those symbols aren't linkable
+from libkicommon and can't be forward-declared meaningfully.
+
+- TU lives in `<app>/api/bindings_<name>.cpp` (e.g.,
+  `eeschema/api/bindings_schematic_state.cpp`).
+- **DO NOT** use `PYBIND11_EMBEDDED_MODULE` — the kiface is dlopen'd
+  lazily, after `py::initialize_interpreter`. Static-init then calls
+  `PyImport_AppendInittab` which CPython refuses, throwing
+  `"Can't add new modules after the interpreter has been initialized"`
+  and aborting the process.
+- Instead, expose a free function:
+  ```cpp
+  void klicad_register_<name>_bindings( pybind11::module_& m )
+  {
+      m.doc() = "...";
+      m.def( "foo", &foo, ... );
+  }
+  ```
+- Declare it in `<app>/api/klicad_kiface_register.h`.
+- Add one entry to the `entries` table in
+  `<app>/api/klicad_kiface_register.cpp::klicad_register_<app>_bindings()`.
+- Add the .cpp to the kiface's source list in `<app>/CMakeLists.txt`.
+- `klicad_register_<app>_bindings()` is called once from the kiface's
+  `IFACE::OnKifaceStart`; it creates each module via the Python C API
+  (`PyModule_New` + `sys.modules` insertion) and calls each register
+  function. The module appears in `sys.modules` immediately, before
+  any Python code can `import` it.
+
+**Net effect for users:** both patterns look identical from Python:
+```python
+import kicad_native_drc            # Pattern A — always available
+import kicad_native_schematic_state # Pattern B — available after schematic kiface loads
+```
+
+Pattern B modules become importable only after the relevant editor has
+been spawned at least once (e.g., via `kicad_native_gui.show_frame('schematic')`).
 
 ## Architecture in one paragraph
 

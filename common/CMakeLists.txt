@@ -366,6 +366,7 @@ if( KICAD_IPC_API )
         api/bindings_pcb_upgrade.cpp
         api/bindings_render.cpp
         api/bindings_sch_upgrade.cpp
+        api/bindings_settings.cpp
         api/bindings_sym_export_svg.cpp
         api/bindings_sym_upgrade.cpp
         api/kicad_native_module.cpp

@@ -82,6 +82,7 @@
 #include <api/api_handler_sch.h>
 #include <api/api_server.h>
 #include <api/api_utils.h>
+#include "api/klicad_kiface_register.h"
 #include <api/headless_sch_context.h>
 #include <sch_io/sch_io.h>
 #include <sch_io/sch_io_mgr.h>
@@ -497,6 +498,10 @@ bool IFACE::OnKifaceStart( PGM_BASE* aProgram, int aCtlBits, KIWAY* aKiway )
 
 #if defined( KICAD_IPC_API )
     m_kiway = aKiway;
+
+    // KliCAD: register kiface-resident pybind11 bindings now that this
+    // kiface is loaded.  See eeschema/api/klicad_kiface_register.h.
+    klicad_register_eeschema_bindings();
 #endif
 
     m_jobHandler = std::make_unique<EESCHEMA_JOBS_HANDLER>( aKiway );
