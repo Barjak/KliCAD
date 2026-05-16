@@ -339,9 +339,12 @@ if( KICAD_IPC_API )
     set( KICOMMON_SRCS
         ${KICOMMON_SRCS}
         api/api_handler.cpp
+        api/api_handler_python.cpp
         api/api_plugin.cpp
         api/api_plugin_manager.cpp
         api/api_server.cpp
+        api/kicad_native_module.cpp
+        api/python_embedded.cpp
         api/python_manager.cpp
     )
 endif()
@@ -408,6 +411,16 @@ endif()
 if( KICAD_IPC_API )
     target_link_libraries( kicommon
         kinng
+        )
+
+    # Local fork: embedded Python interpreter for the RunPython IPC command.
+    # Hard-failure on missing deps is intentional — every always-on API server
+    # build needs these.
+    find_package( Python3 REQUIRED COMPONENTS Development )
+    find_package( pybind11 REQUIRED CONFIG )
+    target_link_libraries( kicommon
+        pybind11::embed
+        Python3::Python
         )
 endif()
 

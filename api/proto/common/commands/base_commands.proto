@@ -101,3 +101,34 @@ message StringResponse
 {
   string response = 1;
 }
+
+// Execute Python source in KiCad's embedded interpreter.  The interpreter is
+// always-on (starts with the API server), runs on KiCad's main thread, and
+// holds a single shared __main__ namespace across calls so that names defined
+// in one RunPython invocation remain accessible to the next.
+//
+// Local fork addition (kicad-python paradigm shift): exposes the full pybind11
+// binding surface to scripted clients without per-method proto definitions.
+message RunPython
+{
+  // Python source.  If the last logical statement is an expression, its repr()
+  // is returned in RunPythonResponse.result_repr.
+  string code = 1;
+}
+
+message RunPythonResponse
+{
+  // True iff the code ran without raising; False on uncaught exception.
+  bool ok = 1;
+
+  // Captured sys.stdout / sys.stderr from the run.
+  string stdout = 2;
+  string stderr = 3;
+
+  // repr() of the trailing expression's value, if the code ended in an
+  // expression rather than a statement.  Empty otherwise.
+  string result_repr = 4;
+
+  // Traceback text on uncaught exception; empty when ok == true.
+  string exception_traceback = 5;
+}

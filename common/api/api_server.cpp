@@ -26,8 +26,10 @@
 
 #include <advanced_config.h>
 #include <api/api_handler.h>
+#include <api/api_handler_python.h>
 #include <api/api_utils.h> // traceApi
 #include <api/api_server.h>
+#include <api/python_embedded.h>
 #include <kiid.h>
 #include <kinng.h>
 #include <paths.h>
@@ -157,6 +159,23 @@ void KICAD_API_SERVER::Start()
 
     wxLogTrace( traceApi, wxString::Format( "Server: listening at %s", SocketPath() ) );
     Bind( API_REQUEST_EVENT, &KICAD_API_SERVER::handleApiEvent, this );
+
+    // Local fork: bring up the embedded Python interpreter + the RunPython
+    // handler so that scripted clients can drive KiCad through bound C++
+    // surface without per-method proto definitions.
+    if( !m_embeddedPython )
+        m_embeddedPython = std::make_unique<EMBEDDED_PYTHON>();
+
+    if( m_embeddedPython->Init() )
+    {
+        m_pythonHandler = std::make_unique<API_HANDLER_PYTHON>( m_embeddedPython.get() );
+        RegisterHandler( m_pythonHandler.get() );
+        wxLogTrace( traceApi, "Server: embedded Python ready, RunPython handler registered" );
+    }
+    else
+    {
+        wxLogTrace( traceApi, "Server: embedded Python init failed; RunPython unavailable" );
+    }
 }
 
 
@@ -167,6 +186,18 @@ void KICAD_API_SERVER::Stop()
 
     wxLogTrace( traceApi, "Stopping server" );
     Unbind( API_REQUEST_EVENT, &KICAD_API_SERVER::handleApiEvent, this );
+
+    if( m_pythonHandler )
+    {
+        DeregisterHandler( m_pythonHandler.get() );
+        m_pythonHandler.reset();
+    }
+
+    if( m_embeddedPython )
+    {
+        m_embeddedPython->Finalize();
+        m_embeddedPython.reset();
+    }
 
     m_server->Stop();
     m_server.reset( nullptr );

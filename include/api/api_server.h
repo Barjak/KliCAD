@@ -32,6 +32,8 @@
 #include <kicommon.h>
 
 class API_HANDLER;
+class API_HANDLER_PYTHON;
+class EMBEDDED_PYTHON;
 class KINNG_REQUEST_SERVER;
 class wxEvtHandler;
 
@@ -102,6 +104,12 @@ private:
     void log( const std::string& aOutput );
 
     std::unique_ptr<KINNG_REQUEST_SERVER> m_server;
+
+    // Local fork: embedded Python interpreter + its IPC handler, both owned
+    // by the server so they share its lifetime.  Initialized in Start(),
+    // torn down in Stop().
+    std::unique_ptr<EMBEDDED_PYTHON>      m_embeddedPython;
+    std::unique_ptr<API_HANDLER_PYTHON>   m_pythonHandler;
 
     std::set<API_HANDLER*> m_handlers;
 
