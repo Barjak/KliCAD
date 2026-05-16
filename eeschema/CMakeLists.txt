@@ -733,6 +733,13 @@ if( APPLE )
     # versionless symlink locally in the install dir). install(DIRECTORY)
     # preserves symlinks from /usr/local/lib that point at ../Cellar/... which
     # become broken inside the .app bundle and trip RefixupMacOS.
+    #
+    # Also create the unversioned libngspice.dylib symlink in Contents/
+    # Frameworks — the simulator's dlopen searches dyld's standard paths
+    # which include the bundle's Frameworks dir, and looks for the
+    # unversioned name "libngspice.dylib".  Without this symlink the
+    # simulator frame fails to load with "Failed to load shared library
+    # 'libngspice.dylib'".
     get_filename_component( REAL_LIBNGSPICE ${ABS_LIBNGSPICE} REALPATH )
     install( FILES ${REAL_LIBNGSPICE}
              DESTINATION "${OSX_BUNDLE_INSTALL_PLUGIN_DIR}/sim" )
@@ -742,6 +749,12 @@ if( APPLE )
             COMMAND ${CMAKE_COMMAND} -E create_symlink
                 libngspice.0.dylib libngspice.dylib
             WORKING_DIRECTORY \"\${CMAKE_INSTALL_PREFIX}/${OSX_BUNDLE_INSTALL_PLUGIN_DIR}/sim\"
+        )
+        file( REMOVE \"\${CMAKE_INSTALL_PREFIX}/${OSX_BUNDLE_INSTALL_LIB_DIR}/libngspice.dylib\" )
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E create_symlink
+                libngspice.0.dylib libngspice.dylib
+            WORKING_DIRECTORY \"\${CMAKE_INSTALL_PREFIX}/${OSX_BUNDLE_INSTALL_LIB_DIR}\"
         )
     " )
     install( DIRECTORY "${LIBNGSPICE_PATH}/ngspice"

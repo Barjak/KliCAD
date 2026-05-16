@@ -2293,8 +2293,15 @@ int PCBNEW_JOBS_HANDLER::doFpExportSvg( JOB_FP_EXPORT_SVG* aSvgJob, const FOOTPR
 {
     // the hack for now is we create fake boards containing the footprint and plot the board
     // until we refactor better plot api later
-    std::unique_ptr<BOARD> brd = BOARD_LOADER::CreateEmptyBoard( Pgm().GetSettingsManager().GetProject( "" ) );
-    brd->GetProject()->ApplyTextVars( aSvgJob->GetVarOverrides() );
+    //
+    // Local fork (KliCAD): GetProject("") returns null when no project is
+    // loaded in SettingsManager (the KliCAD embedded-Python path can hit
+    // this; kicad-cli always LoadProject()s first).  Guard the ApplyTextVars
+    // call rather than crash.  CreateEmptyBoard tolerates a null project.
+    PROJECT* project = Pgm().GetSettingsManager().GetProject( "" );
+    std::unique_ptr<BOARD> brd = BOARD_LOADER::CreateEmptyBoard( project );
+    if( brd->GetProject() )
+        brd->GetProject()->ApplyTextVars( aSvgJob->GetVarOverrides() );
     brd->SynchronizeProperties();
 
     FOOTPRINT* fp = dynamic_cast<FOOTPRINT*>( aFootprint->Clone() );

@@ -360,6 +360,7 @@ if( KICAD_IPC_API )
         api/bindings_gerber_diff.cpp
         api/bindings_gerber_export_png.cpp
         api/bindings_gerber_info.cpp
+        api/bindings_gui.cpp
         api/bindings_jobset.cpp
         api/bindings_pcb_import.cpp
         api/bindings_pcb_upgrade.cpp
