@@ -81,6 +81,9 @@ void klicad_register_eeschema_bindings()
             { "kicad_native_schematic_state",
               "KliCAD direct SCHEMATIC state binding (kiface-loaded).",
               &klicad_register_schematic_state_bindings },
+            { "kicad_native_symbol_editor",
+              "KliCAD symbol library editor (kiface-loaded).",
+              &klicad_register_symbol_editor_bindings },
         };
 
         for( const Entry& e : entries )

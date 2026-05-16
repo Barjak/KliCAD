@@ -503,6 +503,7 @@ if( KICAD_IPC_API )
         api/api_handler_sch.cpp
         api/bindings_sch_actions.cpp
         api/bindings_schematic_state.cpp
+        api/bindings_symbol_editor.cpp
         api/headless_sch_context.cpp
         api/klicad_kiface_register.cpp
         api/sch_context.cpp
