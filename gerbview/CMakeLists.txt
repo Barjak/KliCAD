@@ -79,6 +79,17 @@ set( GERBVIEW_SRCS
     gerbview_jobs_handler.cpp
     )
 
+if( KICAD_IPC_API )
+    # KliCAD kiface-resident bindings: registered at OnKifaceStart via
+    # klicad_kiface_register, NOT via PYBIND11_EMBEDDED_MODULE (which can't
+    # be used in a lazy-loaded kiface — see klicad_kiface_register.h).
+    set( GERBVIEW_SRCS
+        ${GERBVIEW_SRCS}
+        api/bindings_gerbview.cpp
+        api/klicad_kiface_register.cpp
+    )
+endif()
+
 set( GERBVIEW_EXTRA_SRCS
 )
 

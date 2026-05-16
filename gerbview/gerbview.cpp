@@ -50,6 +50,10 @@
 #include <dialogs/panel_toolbar_customization.h>
 #include <toolbars_gerber.h>
 
+#if defined( KICAD_IPC_API )
+#include "api/klicad_kiface_register.h"
+#endif
+
 using json = nlohmann::json;
 
 
@@ -171,6 +175,12 @@ bool IFACE::OnKifaceStart( PGM_BASE* aProgram, int aCtlBits, KIWAY* aKiway )
     InitSettings( new GERBVIEW_SETTINGS );
     aProgram->GetSettingsManager().RegisterSettings( KifaceSettings() );
     start_common( aCtlBits );
+
+#if defined( KICAD_IPC_API )
+    // KliCAD: register kiface-resident pybind11 bindings now that this
+    // kiface is loaded.  See gerbview/api/klicad_kiface_register.h.
+    klicad_register_gerbview_bindings();
+#endif
 
     m_jobHandler = std::make_unique<GERBVIEW_JOBS_HANDLER>( aKiway );
 
