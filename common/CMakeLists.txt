@@ -361,9 +361,15 @@ if( KICAD_IPC_API )
         api/bindings_gerber_export_png.cpp
         api/bindings_gerber_info.cpp
         api/bindings_gui.cpp
+        api/bindings_io_discovery.cpp
         api/bindings_jobset.cpp
+        api/bindings_kiway_events.cpp
         api/bindings_library_tables.cpp
+        api/bindings_pcb_calculator.cpp
         api/bindings_pcb_import.cpp
+        # bindings_pcm.cpp deferred — depends on kicad/pcm/pcm.cpp which
+        # pulls in dialog/* headers not reachable from libkicommon.  Needs
+        # a separate static-lib extraction or fs-walk fallback.
         api/bindings_project_manager.cpp
         api/bindings_pcb_upgrade.cpp
         api/bindings_render.cpp
@@ -499,6 +505,14 @@ target_include_directories( kicommon
         $<TARGET_PROPERTY:picosha2,INTERFACE_INCLUDE_DIRECTORIES>
         $<TARGET_PROPERTY:nlohmann_json_schema_validator,INTERFACE_INCLUDE_DIRECTORIES>
         $<TARGET_PROPERTY:thread-pool,INTERFACE_INCLUDE_DIRECTORIES>
+    )
+
+# Separate PRIVATE block so PUBLIC propagation isn't affected.
+# KliCAD: PCM headers live in kicad/pcm/ with same-dir relative includes;
+# kicommon needs ${CMAKE_SOURCE_DIR}/kicad to find <pcm/pcm.h>.
+target_include_directories( kicommon
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/kicad
     )
 
 add_dependencies( kicommon pegtl version_header )
