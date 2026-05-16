@@ -41,6 +41,10 @@
 #include "pl_editor_frame.h"
 #include "pl_editor_settings.h"
 
+#if defined( KICAD_IPC_API )
+#include "api/klicad_kiface_register.h"
+#endif
+
 
 namespace PGE {
 
@@ -153,6 +157,13 @@ bool IFACE::OnKifaceStart( PGM_BASE* aProgram, int aCtlBits, KIWAY* aKiway )
     InitSettings( new PL_EDITOR_SETTINGS );
     aProgram->GetSettingsManager().RegisterSettings( KifaceSettings() );
     start_common( aCtlBits );
+
+#if defined( KICAD_IPC_API )
+    // KliCAD: register kiface-resident pybind11 bindings now that this
+    // kiface is loaded.  See pagelayout_editor/api/klicad_kiface_register.h.
+    klicad_register_pl_editor_bindings();
+#endif
+
     return true;
 }
 

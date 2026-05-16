@@ -47,6 +47,17 @@ set( PL_EDITOR_SRCS
 set( PL_EDITOR_EXTRA_SRCS
 )
 
+if( KICAD_IPC_API )
+    # KliCAD kiface-resident bindings: registered at OnKifaceStart via
+    # klicad_kiface_register, NOT via PYBIND11_EMBEDDED_MODULE (which can't
+    # be used in a lazy-loaded kiface — see klicad_kiface_register.h).
+    set( PL_EDITOR_SRCS
+        ${PL_EDITOR_SRCS}
+        api/bindings_pagelayout.cpp
+        api/klicad_kiface_register.cpp
+    )
+endif()
+
 if( WIN32 )
     if( MINGW )
         # PL_EDITOR_RESOURCES variable is set by the macro.
