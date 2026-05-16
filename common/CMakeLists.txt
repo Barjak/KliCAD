@@ -364,6 +364,7 @@ if( KICAD_IPC_API )
         api/bindings_jobset.cpp
         api/bindings_library_tables.cpp
         api/bindings_pcb_import.cpp
+        api/bindings_project_manager.cpp
         api/bindings_pcb_upgrade.cpp
         api/bindings_render.cpp
         api/bindings_sch_upgrade.cpp
