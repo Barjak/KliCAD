@@ -29,7 +29,8 @@
 #include <pybind11/embed.h>
 
 // Per-binding register functions (one per kiface-resident bindings_*.cpp).
-// (None yet — add forward declarations here as Pattern B bindings land.)
+void klicad_register_footprint_editor_bindings( pybind11::module_& m );
+void klicad_register_pcb_state_bindings( pybind11::module_& m );
 
 
 // Called once from IFACE::OnKifaceStart.  Idempotent (does nothing on

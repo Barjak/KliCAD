@@ -75,8 +75,12 @@ void klicad_register_pcbnew_bindings()
         };
 
         const std::vector<Entry> entries = {
-            // No pcbnew kiface-resident Pattern B bindings yet.  Add entries
-            // here as bindings_*.cpp TUs land in pcbnew/api/.
+            { "kicad_native_footprint_editor",
+              "KliCAD footprint library editor (kiface-loaded).",
+              &klicad_register_footprint_editor_bindings },
+            { "kicad_native_pcb_state",
+              "KliCAD direct BOARD state binding (kiface-loaded).",
+              &klicad_register_pcb_state_bindings },
         };
 
         for( const Entry& e : entries )
