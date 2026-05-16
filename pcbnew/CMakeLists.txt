@@ -524,9 +524,12 @@ if( KICAD_IPC_API )
     # be used in a lazy-loaded kiface — see klicad_kiface_register.h).
     set( PCBNEW_SRCS ${PCBNEW_SRCS}
         api/api_handler_pcb.cpp
+        api/bindings_3d_resolver.cpp
+        api/bindings_drc_rules.cpp
         api/bindings_footprint_editor.cpp
         api/bindings_pcb_actions.cpp
         api/bindings_pcb_state.cpp
+        api/bindings_stackup.cpp
         api/board_context.cpp
         api/klicad_kiface_register.cpp
         )

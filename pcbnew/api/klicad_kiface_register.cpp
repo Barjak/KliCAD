@@ -75,6 +75,12 @@ void klicad_register_pcbnew_bindings()
         };
 
         const std::vector<Entry> entries = {
+            { "kicad_native_3d_resolver",
+              "KliCAD 3D model path resolver (FILENAME_RESOLVER, kiface-loaded).",
+              &klicad_register_3d_resolver_bindings },
+            { "kicad_native_drc_rules",
+              "KliCAD DRC custom-rules + length report binding (kiface-loaded).",
+              &klicad_register_drc_rules_bindings },
             { "kicad_native_footprint_editor",
               "KliCAD footprint library editor (kiface-loaded).",
               &klicad_register_footprint_editor_bindings },
@@ -84,6 +90,9 @@ void klicad_register_pcbnew_bindings()
             { "kicad_native_pcb_state",
               "KliCAD direct BOARD state binding (kiface-loaded).",
               &klicad_register_pcb_state_bindings },
+            { "kicad_native_stackup",
+              "KliCAD board stackup CRUD binding (kiface-loaded).",
+              &klicad_register_stackup_bindings },
         };
 
         for( const Entry& e : entries )
