@@ -347,6 +347,9 @@ if( KICAD_IPC_API )
         api/api_plugin.cpp
         api/api_plugin_manager.cpp
         api/api_server.cpp
+        # bindings_3d_resolver.cpp moved to pcbnew kiface (Pattern B) — FILENAME_RESOLVER
+        # is in static libcommon, not shared libkicommon.
+        api/bindings_design_blocks.cpp
         api/bindings_drc.cpp
         api/bindings_erc.cpp
         api/bindings_export_3d.cpp
@@ -365,11 +368,12 @@ if( KICAD_IPC_API )
         api/bindings_jobset.cpp
         api/bindings_kiway_events.cpp
         api/bindings_library_tables.cpp
+        api/bindings_local_history.cpp
         api/bindings_pcb_calculator.cpp
         api/bindings_pcb_import.cpp
-        # bindings_pcm.cpp deferred — depends on kicad/pcm/pcm.cpp which
-        # pulls in dialog/* headers not reachable from libkicommon.  Needs
-        # a separate static-lib extraction or fs-walk fallback.
+        # bindings_pcm.cpp rewritten as filesystem-walk binding (Wave 4)
+        # — no longer pulls in kicad/pcm/* deps.
+        api/bindings_pcm.cpp
         api/bindings_project_manager.cpp
         api/bindings_pcb_upgrade.cpp
         api/bindings_render.cpp
