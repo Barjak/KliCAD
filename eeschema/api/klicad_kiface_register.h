@@ -29,6 +29,7 @@
 #include <pybind11/embed.h>
 
 // Per-binding register functions (one per kiface-resident bindings_*.cpp).
+void klicad_register_annotation_bindings( pybind11::module_& m );
 void klicad_register_sch_actions_bindings( pybind11::module_& m );
 void klicad_register_schematic_state_bindings( pybind11::module_& m );
 void klicad_register_simulator_bindings( pybind11::module_& m );

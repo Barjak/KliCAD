@@ -501,6 +501,7 @@ if( KICAD_IPC_API )
     set( EESCHEMA_SRCS
         ${EESCHEMA_SRCS}
         api/api_handler_sch.cpp
+        api/bindings_annotation.cpp
         api/bindings_sch_actions.cpp
         api/bindings_schematic_state.cpp
         api/bindings_simulator.cpp

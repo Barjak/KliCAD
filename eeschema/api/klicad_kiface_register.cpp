@@ -75,6 +75,9 @@ void klicad_register_eeschema_bindings()
         };
 
         const std::vector<Entry> entries = {
+            { "kicad_native_annotation",
+              "KliCAD schematic annotation binding (kiface-loaded).",
+              &klicad_register_annotation_bindings },
             { "kicad_native_sch_actions",
               "KliCAD schematic-editor TOOL_ACTION runner (kiface-loaded).",
               &klicad_register_sch_actions_bindings },
