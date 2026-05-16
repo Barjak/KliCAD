@@ -30,6 +30,7 @@
 
 // Per-binding register functions (one per kiface-resident bindings_*.cpp).
 void klicad_register_footprint_editor_bindings( pybind11::module_& m );
+void klicad_register_pcb_actions_bindings( pybind11::module_& m );
 void klicad_register_pcb_state_bindings( pybind11::module_& m );
 
 
