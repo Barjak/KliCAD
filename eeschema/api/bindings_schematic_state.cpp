@@ -374,6 +374,49 @@ int sch_state_get_sheet_count()
 
 
 // ──────────────────────────────────────────────────────────────────────────
+// open_schematic
+// ──────────────────────────────────────────────────────────────────────────
+py::dict sch_state_open_schematic( const std::string& aPath )
+{
+    if( aPath.empty() )
+        throw std::invalid_argument( "open_schematic: path is empty" );
+
+    SCH_EDIT_FRAME* frame = require_sch_edit_frame();
+
+    std::vector<wxString> files = { wxString::FromUTF8( aPath.c_str() ) };
+    bool ok = frame->OpenProjectFiles( files, /*aCtl*/ 0 );
+
+    if( frame->GetCanvas() )
+        frame->GetCanvas()->Refresh();
+
+    py::dict d;
+    d[ "ok" ]    = ok;
+    d[ "path" ]  = aPath;
+    d[ "sheet_count" ] = sch_state_get_sheet_count();
+    return d;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
+// save_schematic
+// ──────────────────────────────────────────────────────────────────────────
+py::dict sch_state_save_schematic()
+{
+    SCH_EDIT_FRAME* frame = require_sch_edit_frame();
+    SCHEMATIC&      sch   = frame->Schematic();
+
+    if( !sch.IsValid() )
+        throw std::runtime_error( "save_schematic: no SCHEMATIC is currently open" );
+
+    bool ok = frame->SaveProject( /*aSaveAs*/ false );
+
+    py::dict d;
+    d[ "ok" ] = ok;
+    return d;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
 // get_items_summary
 // ──────────────────────────────────────────────────────────────────────────
 py::dict sch_state_get_items_summary()
@@ -493,6 +536,33 @@ Returns {ok: bool, kiid: str, lib_id: str, ref_des: str, error?: str}.
 Raises RuntimeError if lib_id parse fails, if no project is loaded, or
 if the underlying LoadSymbol throws IO_ERROR.  Returns ok=False with an
 error field if the lib_id parses but resolves to no symbol.
+)DOC" );
+
+    m.def( "open_schematic", &sch_state_open_schematic, py::arg( "path" ),
+           R"DOC(Load a .kicad_sch file into the open SCH_EDIT_FRAME.
+
+Wraps SCH_EDIT_FRAME::OpenProjectFiles().  After this returns ok=True
+the SCHEMATIC on the editor is the just-loaded one and subsequent
+calls (get_items_summary, kicad_native_hierarchy.*, etc.) operate
+against it.
+
+Returns: {ok, path, sheet_count}.
+
+Raises:
+    ValueError on empty path.
+    RuntimeError if SCH editor can't be spawned.
+)DOC" );
+
+    m.def( "save_schematic", &sch_state_save_schematic,
+           R"DOC(Save the active SCHEMATIC in place.
+
+Wraps SCH_EDIT_FRAME::SaveProject(aSaveAs=False).  For "save as",
+drive the EditorControl.saveAs tool action via kicad_native_sch_actions.
+
+Returns: {ok}.
+
+Raises:
+    RuntimeError if no schematic is open.
 )DOC" );
 
     m.def( "get_sheet_count", &sch_state_get_sheet_count,

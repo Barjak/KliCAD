@@ -486,6 +486,67 @@ py::list pcb_state_list_layers()
 
 
 // ──────────────────────────────────────────────────────────────────────────
+// open_board
+// ──────────────────────────────────────────────────────────────────────────
+py::dict pcb_state_open_board( const std::string& aPath )
+{
+    if( aPath.empty() )
+        throw std::invalid_argument( "open_board: path is empty" );
+
+    PCB_EDIT_FRAME* frame = require_pcb_edit_frame();
+
+    std::vector<wxString> files = { wxString::FromUTF8( aPath.c_str() ) };
+    bool ok = frame->OpenProjectFiles( files, /*aCtl*/ 0 );
+
+    refresh_pcb_canvas( frame );
+
+    py::dict d;
+    d[ "ok" ] = ok;
+    d[ "path" ] = aPath;
+
+    if( BOARD* board = frame->GetBoard() )
+        d[ "filename" ] = std::string( board->GetFileName().utf8_str() );
+    else
+        d[ "filename" ] = std::string();
+
+    return d;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
+// save_board
+// ──────────────────────────────────────────────────────────────────────────
+py::dict pcb_state_save_board( const std::string& aPath )
+{
+    PCB_EDIT_FRAME* frame = require_pcb_edit_frame();
+    BOARD*          board = frame->GetBoard();
+
+    if( !board )
+        throw std::runtime_error( "save_board: no BOARD is currently open" );
+
+    // Empty path means "save in place".
+    wxString target = aPath.empty()
+                          ? board->GetFileName()
+                          : wxString::FromUTF8( aPath.c_str() );
+
+    if( target.IsEmpty() )
+    {
+        throw std::runtime_error(
+            "save_board: no target path supplied and BOARD has no filename" );
+    }
+
+    bool ok = frame->SavePcbFile( target,
+                                  /*addToHistory*/ false,
+                                  /*aChangeProject*/ false );
+
+    py::dict d;
+    d[ "ok" ]   = ok;
+    d[ "path" ] = std::string( target.utf8_str() );
+    return d;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
 // get_board_info
 // ──────────────────────────────────────────────────────────────────────────
 py::dict pcb_state_get_board_info()
@@ -599,6 +660,36 @@ texts (PCB_TEXT_T), dimensions (all PCB_DIM_* variants).
 
 Order follows LSET::Seq().  Names match BOARD::GetLayerName, which
 prefers any user-renamed copper layer name.
+)DOC" );
+
+    m.def( "open_board", &pcb_state_open_board, py::arg( "path" ),
+           R"DOC(Load a .kicad_pcb file into the open PCB_EDIT_FRAME.
+
+Wraps PCB_EDIT_FRAME::OpenProjectFiles().  After this returns ok=True
+the BOARD on the editor is the just-loaded one and subsequent calls
+(list_layers, get_board_info, kicad_native_netinfo.*, etc.) operate
+against it.
+
+Returns: {ok, path, filename}.
+
+Raises:
+    ValueError on empty path.
+    RuntimeError if PCB editor can't be spawned.
+)DOC" );
+
+    m.def( "save_board", &pcb_state_save_board,
+           py::arg( "path" ) = std::string(),
+           R"DOC(Save the active BOARD.  Empty path means "save in place".
+
+Wraps PCB_EDIT_FRAME::SavePcbFile() without project rename and without
+adding to file history (so headless saves don't pollute the recent-
+files list).  For "save as" with project rename, drive the
+EditorControl.saveAs tool action through kicad_native_pcb_actions.
+
+Returns: {ok, path}.
+
+Raises:
+    RuntimeError if no board is open or empty path + no current filename.
 )DOC" );
 
     m.def( "get_board_info", &pcb_state_get_board_info,
