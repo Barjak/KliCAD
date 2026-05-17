@@ -502,8 +502,10 @@ if( KICAD_IPC_API )
         ${EESCHEMA_SRCS}
         api/api_handler_sch.cpp
         api/bindings_annotation.cpp
+        api/bindings_hierarchy.cpp
         api/bindings_sch_actions.cpp
         api/bindings_schematic_state.cpp
+        api/bindings_sim_advanced.cpp
         api/bindings_simulator.cpp
         api/bindings_symbol_editor.cpp
         api/headless_sch_context.cpp
