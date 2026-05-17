@@ -1148,6 +1148,16 @@ void FOOTPRINT_EDIT_FRAME::initLibraryTree()
 {
     FOOTPRINT_LIBRARY_ADAPTER* footprints = PROJECT_PCB::FootprintLibAdapter( &Prj() );
 
+    // Ensure libraries are loaded before building the tree. PCB editor (unlike the
+    // schematic editor) does not trigger pcbface->PreloadLibraries() on project open,
+    // so when the footprint editor is the first PCB-side frame the user opens, the
+    // FOOTPRINT_LIBRARY_ADAPTER cache is empty and AddLibraries() would skip every
+    // row via the HasLibrary() guard, producing a tree with 0 libraries. Mirror the
+    // FOOTPRINT_LIST_IMPL::ReadFootprintFiles / panel_footprint_chooser pattern of
+    // kicking off the async load synchronously here.
+    footprints->AsyncLoad();
+    footprints->BlockUntilLoaded();
+
     m_adapter = FP_TREE_SYNCHRONIZING_ADAPTER::Create( this, footprints );
     auto adapter = static_cast<FP_TREE_SYNCHRONIZING_ADAPTER*>( m_adapter.get() );
 
