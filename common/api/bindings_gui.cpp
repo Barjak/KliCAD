@@ -131,6 +131,28 @@ py::object show_frame( const std::string& name, bool raise_to_front )
 
     FRAME_T frame_id = frame_from_string( name );
 
+    // The 3D viewer is NOT spawned through the kiway frame factory —
+    // upstream's IFACE::CreateKiWindow in pcbnew has no case for
+    // FRAME_PCB_DISPLAY3D.  It's constructed as a child of the PCB editor
+    // via PCB_BASE_FRAME::CreateAndShow3D_Frame(), which we can't call
+    // from libkicommon (PCB_BASE_FRAME lives in pcbnew kiface).  Direct
+    // users to the 3D viewer binding's auto-spawning path instead.
+    if( frame_id == FRAME_PCB_DISPLAY3D )
+    {
+        py::dict r;
+        r[ "ok" ]       = false;
+        r[ "name" ]     = name;
+        r[ "frame_id" ] = static_cast<int>( frame_id );
+        r[ "raised" ]   = false;
+        r[ "error" ]    = std::string(
+            "FRAME_PCB_DISPLAY3D is not spawnable via show_frame() — upstream "
+            "spawns it as a child of PCB_EDIT_FRAME, not through the kiway "
+            "frame factory.  Use kicad_native_3d_viewer instead (any call "
+            "auto-spawns it via PCB_BASE_FRAME::CreateAndShow3D_Frame), e.g.: "
+            "kicad_native_3d_viewer.is_open()" );
+        return r;
+    }
+
     // Some frames need a specific parent frame to be alive before their
     // constructor can succeed (the upstream ctor dereferences the parent
     // without a null-check).  Spawn the prerequisite first.
@@ -138,15 +160,11 @@ py::object show_frame( const std::string& name, bool raise_to_front )
     // Confirmed by crash:
     //   - FRAME_SIMULATOR: SIMULATOR_FRAME_UI::SIMULATOR_FRAME_UI dereferences
     //     SCH_BASE_FRAME::eeconfig() on its (potentially-null) SCH parent.
-    //   - FRAME_PCB_DISPLAY3D: needs board context from PCB editor (kiface
-    //     load fails to nullptr otherwise).
     //
     // For self-sufficient frames we leave parent=null (their ctor handles it).
     KIWAY_PLAYER* parent_frame = nullptr;
     if( frame_id == FRAME_SIMULATOR )
         parent_frame = kiway->Player( FRAME_SCH, true );
-    else if( frame_id == FRAME_PCB_DISPLAY3D )
-        parent_frame = kiway->Player( FRAME_PCB_EDITOR, true );
 
     // Player(_, true, parent) creates the frame if missing, with the
     // explicit parent for ctors that need it.

@@ -33,6 +33,7 @@
 #include <3d_viewer/eda_3d_viewer_settings.h>
 #include <3d_canvas/board_adapter.h>
 #include <3d_canvas/eda_3d_canvas.h>
+#include <pcb_base_frame.h>
 
 #include <wx/image.h>
 #include <wx/string.h>
@@ -76,24 +77,56 @@ EDA_3D_VIEWER_FRAME* find_3d_viewer_frame()
 }
 
 
+// Find any PCB_BASE_FRAME — PCB_EDIT_FRAME or FOOTPRINT_EDIT_FRAME both
+// inherit it and both expose CreateAndShow3D_Frame().  Walk top-level
+// windows the same way as the other Pattern B helpers (cross-kiface
+// dynamic_cast isn't safe — match on GetFrameType then static_cast).
+PCB_BASE_FRAME* find_pcb_base_frame_for_3d()
+{
+    for( wxWindow* w : wxTopLevelWindows )
+    {
+        EDA_BASE_FRAME* base = dynamic_cast<EDA_BASE_FRAME*>( w );
+
+        if( !base )
+            continue;
+
+        FRAME_T t = base->GetFrameType();
+
+        if( t == FRAME_PCB_EDITOR || t == FRAME_FOOTPRINT_EDITOR )
+            return static_cast<PCB_BASE_FRAME*>( base );
+    }
+    return nullptr;
+}
+
+
 EDA_3D_VIEWER_FRAME* require_3d_viewer_frame()
 {
     if( EDA_3D_VIEWER_FRAME* frame = find_3d_viewer_frame() )
         return frame;
 
+    // Upstream KiCad doesn't spawn FRAME_PCB_DISPLAY3D through the kiway
+    // frame factory — IFACE::CreateKiWindow has no case for it.  Instead
+    // PCB_BASE_FRAME::CreateAndShow3D_Frame() constructs the viewer as a
+    // child of the PCB editor.  Make sure the PCB editor exists, then go
+    // through that path.
     KIWAY* kiway = find_live_kiway_for_3d_viewer();
 
     if( !kiway )
         throw std::runtime_error( "no live KIWAY available — is KiCad's GUI running?" );
 
-    // The 3D viewer's parent is PCB_EDIT_FRAME — spawn pcbnew first.
-    kiway->Player( FRAME_PCB_EDITOR,   true );
-    kiway->Player( FRAME_PCB_DISPLAY3D, true );
+    // Spawn the PCB editor if it isn't up yet.
+    if( !find_pcb_base_frame_for_3d() )
+        kiway->Player( FRAME_PCB_EDITOR, true );
 
-    EDA_3D_VIEWER_FRAME* frame = find_3d_viewer_frame();
+    PCB_BASE_FRAME* pcb = find_pcb_base_frame_for_3d();
+
+    if( !pcb )
+        throw std::runtime_error( "failed to obtain PCB_BASE_FRAME for 3D viewer parent" );
+
+    EDA_3D_VIEWER_FRAME* frame = pcb->CreateAndShow3D_Frame();
 
     if( !frame )
-        throw std::runtime_error( "failed to obtain EDA_3D_VIEWER_FRAME" );
+        throw std::runtime_error( "PCB_BASE_FRAME::CreateAndShow3D_Frame returned nullptr" );
 
     return frame;
 }
