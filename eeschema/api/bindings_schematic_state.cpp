@@ -43,8 +43,11 @@
 #include <sch_line.h>
 #include <sch_label.h>
 #include <sch_junction.h>
+#include <sch_field.h>
+#include <sch_pin.h>
 #include <sch_commit.h>
 #include <sch_sheet_path.h>
+#include <template_fieldnames.h>
 
 #include <project_sch.h>
 #include <libraries/symbol_library_adapter.h>
@@ -60,14 +63,18 @@ namespace py = pybind11;
 namespace
 {
 
-// Position scaling: mm in, nanometers out (KiCad internal unit for
-// schematics is nm).
-constexpr double MM_TO_NM = 1e6;
+// Position scaling: mm in, schematic IU out.  Schematic IU is 100nm per IU
+// (10000 per mm) — NOT the 1e6 PCB scale.  See SCH_IU_PER_MM in
+// include/base_units.h.  An earlier version of this binding used 1e6 here,
+// which silently placed every add_symbol/add_wire 100x out of canvas; the
+// schematic looked normal because KiCad auto-zoomed.  Fixed when
+// get_symbol_pin_position revealed the discrepancy.
+constexpr double MM_TO_IU = 1e4;
 
-inline VECTOR2I mm_to_nm( double x_mm, double y_mm )
+inline VECTOR2I mm_to_nm( double x_mm, double y_mm )   // legacy name; now IU
 {
-    return VECTOR2I( static_cast<int>( x_mm * MM_TO_NM ),
-                     static_cast<int>( y_mm * MM_TO_NM ) );
+    return VECTOR2I( static_cast<int>( x_mm * MM_TO_IU ),
+                     static_cast<int>( y_mm * MM_TO_IU ) );
 }
 
 
@@ -359,6 +366,287 @@ py::object sch_state_add_symbol( const std::string& lib_id_str,
 
 
 // ──────────────────────────────────────────────────────────────────────────
+// Helpers for the new symbol-edit primitives.  Find a placed SCH_SYMBOL by
+// its KIID anywhere in the schematic hierarchy (walks every sheet's screen).
+// ──────────────────────────────────────────────────────────────────────────
+SCH_SYMBOL* find_symbol_by_kiid( SCHEMATIC& aSch, const wxString& aKiidStr )
+{
+    KIID needle;
+    try
+    {
+        needle = KIID( aKiidStr );
+    }
+    catch( ... )
+    {
+        return nullptr;
+    }
+
+    for( const SCH_SHEET_PATH& path : aSch.Hierarchy() )
+    {
+        SCH_SCREEN* screen = path.LastScreen();
+        if( !screen )
+            continue;
+
+        for( SCH_ITEM* item : screen->Items().OfType( SCH_SYMBOL_T ) )
+        {
+            if( item->m_Uuid == needle )
+                return static_cast<SCH_SYMBOL*>( item );
+        }
+    }
+    return nullptr;
+}
+
+
+// Resolve which sheet path contains a given placed SCH_SYMBOL.  Needed for
+// the per-instance setters (SetRef / SetValueFieldText accept an instance).
+SCH_SHEET_PATH find_sheet_for_symbol( SCHEMATIC& aSch, SCH_SYMBOL* aSym )
+{
+    for( const SCH_SHEET_PATH& path : aSch.Hierarchy() )
+    {
+        SCH_SCREEN* screen = path.LastScreen();
+        if( !screen )
+            continue;
+
+        for( SCH_ITEM* item : screen->Items().OfType( SCH_SYMBOL_T ) )
+        {
+            if( item == aSym )
+                return path;
+        }
+    }
+    return aSch.CurrentSheet();
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
+// set_symbol_value
+// ──────────────────────────────────────────────────────────────────────────
+py::dict sch_state_set_symbol_value( const std::string& kiid_str,
+                                     const std::string& new_value )
+{
+    SCH_EDIT_FRAME* frame = require_sch_edit_frame();
+    SCHEMATIC&      sch   = frame->Schematic();
+
+    SCH_SYMBOL* sym = find_symbol_by_kiid( sch, wxString::FromUTF8( kiid_str.c_str() ) );
+
+    if( !sym )
+        throw std::runtime_error( "set_symbol_value: no symbol with kiid '" + kiid_str + "'" );
+
+    SCH_SHEET_PATH path = find_sheet_for_symbol( sch, sym );
+    SCH_SCREEN*    screen = path.LastScreen();
+
+    {
+        SCH_COMMIT commit( frame );
+        commit.Modify( sym, screen );
+        sym->SetValueFieldText( wxString::FromUTF8( new_value.c_str() ), &path );
+        commit.Push( wxT( "KliCAD: set_symbol_value" ) );
+    }
+
+    if( frame->GetCanvas() )
+        frame->GetCanvas()->Refresh();
+
+    py::dict d;
+    d[ "ok" ]    = true;
+    d[ "kiid" ]  = kiid_str;
+    d[ "value" ] = new_value;
+    return d;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
+// set_symbol_field — generic field setter.  Creates a USER field if the
+// named field doesn't exist.  Used for SPICE annotations (Sim_Device,
+// Sim_Model, Sim_Pins, etc.) as well as Footprint, Datasheet, custom.
+// ──────────────────────────────────────────────────────────────────────────
+py::dict sch_state_set_symbol_field( const std::string& kiid_str,
+                                     const std::string& field_name,
+                                     const std::string& new_value )
+{
+    if( field_name.empty() )
+        throw std::invalid_argument( "set_symbol_field: field_name is empty" );
+
+    SCH_EDIT_FRAME* frame = require_sch_edit_frame();
+    SCHEMATIC&      sch   = frame->Schematic();
+
+    SCH_SYMBOL* sym = find_symbol_by_kiid( sch, wxString::FromUTF8( kiid_str.c_str() ) );
+
+    if( !sym )
+        throw std::runtime_error( "set_symbol_field: no symbol with kiid '" + kiid_str + "'" );
+
+    SCH_SHEET_PATH path = find_sheet_for_symbol( sch, sym );
+    SCH_SCREEN*    screen = path.LastScreen();
+
+    wxString fname = wxString::FromUTF8( field_name.c_str() );
+    wxString fval  = wxString::FromUTF8( new_value.c_str() );
+
+    bool created = false;
+
+    {
+        SCH_COMMIT commit( frame );
+        commit.Modify( sym, screen );
+
+        SCH_FIELD* field = sym->GetField( fname );
+
+        if( field )
+        {
+            field->SetText( fval );
+        }
+        else
+        {
+            // Create a USER field on this symbol.  SCH_FIELD ctor takes
+            // (parent, type, name).  USER fields participate in netlist
+            // generation just like mandatory ones.
+            SCH_FIELD newField( sym, FIELD_T::USER, fname );
+            newField.SetText( fval );
+            sym->AddField( newField );
+            created = true;
+        }
+
+        commit.Push( wxT( "KliCAD: set_symbol_field" ) );
+    }
+
+    if( frame->GetCanvas() )
+        frame->GetCanvas()->Refresh();
+
+    py::dict d;
+    d[ "ok" ]      = true;
+    d[ "kiid" ]    = kiid_str;
+    d[ "field" ]   = field_name;
+    d[ "value" ]   = new_value;
+    d[ "created" ] = created;
+    return d;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
+// set_symbol_rotation — absolute rotation in degrees (0/90/180/270).
+// Mirror flags are left untouched.
+// ──────────────────────────────────────────────────────────────────────────
+py::dict sch_state_set_symbol_rotation( const std::string& kiid_str, int degrees )
+{
+    int normalized = ( ( degrees % 360 ) + 360 ) % 360;
+
+    int orient_flag;
+    switch( normalized )
+    {
+    case 0:   orient_flag = SYM_ORIENT_0;   break;
+    case 90:  orient_flag = SYM_ORIENT_90;  break;
+    case 180: orient_flag = SYM_ORIENT_180; break;
+    case 270: orient_flag = SYM_ORIENT_270; break;
+    default:
+        throw std::invalid_argument(
+            "set_symbol_rotation: degrees must be a multiple of 90 "
+            "(got " + std::to_string( degrees ) + ")" );
+    }
+
+    SCH_EDIT_FRAME* frame = require_sch_edit_frame();
+    SCHEMATIC&      sch   = frame->Schematic();
+
+    SCH_SYMBOL* sym = find_symbol_by_kiid( sch, wxString::FromUTF8( kiid_str.c_str() ) );
+
+    if( !sym )
+        throw std::runtime_error( "set_symbol_rotation: no symbol with kiid '" + kiid_str + "'" );
+
+    SCH_SHEET_PATH path = find_sheet_for_symbol( sch, sym );
+    SCH_SCREEN*    screen = path.LastScreen();
+
+    // Preserve mirror flags from the current orientation while replacing
+    // the rotation component.
+    int mirror = sym->GetOrientation() & ( SYM_MIRROR_X | SYM_MIRROR_Y );
+
+    {
+        SCH_COMMIT commit( frame );
+        commit.Modify( sym, screen );
+        sym->SetOrientation( orient_flag | mirror );
+        commit.Push( wxT( "KliCAD: set_symbol_rotation" ) );
+    }
+
+    if( frame->GetCanvas() )
+        frame->GetCanvas()->Refresh();
+
+    py::dict d;
+    d[ "ok" ]       = true;
+    d[ "kiid" ]     = kiid_str;
+    d[ "rotation" ] = normalized;
+    return d;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
+// get_symbol_pin_position — return world-coordinate (mm) position of a pin
+// on a placed symbol, identified by pin number OR pin name.  Returns the
+// list of available pins on failure so callers can diagnose.
+// ──────────────────────────────────────────────────────────────────────────
+py::dict sch_state_get_symbol_pin_position( const std::string& kiid_str,
+                                            const std::string& pin_id )
+{
+    SCH_EDIT_FRAME* frame = require_sch_edit_frame();
+    SCHEMATIC&      sch   = frame->Schematic();
+
+    SCH_SYMBOL* sym = find_symbol_by_kiid( sch, wxString::FromUTF8( kiid_str.c_str() ) );
+
+    if( !sym )
+        throw std::runtime_error( "get_symbol_pin_position: no symbol with kiid '" + kiid_str + "'" );
+
+    wxString needle = wxString::FromUTF8( pin_id.c_str() );
+    SCH_SHEET_PATH path = find_sheet_for_symbol( sch, sym );
+
+    std::vector<SCH_PIN*> pins = sym->GetPins( &path );
+
+    // First pass: exact match on pin number.
+    for( SCH_PIN* pin : pins )
+    {
+        if( pin->GetNumber() == needle )
+        {
+            VECTOR2I pos = pin->GetPosition();
+
+            py::dict d;
+            d[ "ok" ]         = true;
+            d[ "kiid" ]       = kiid_str;
+            d[ "pin_number" ] = std::string( pin->GetNumber().utf8_str() );
+            d[ "pin_name" ]   = std::string( pin->GetName().utf8_str() );
+            d[ "x_mm" ]       = pos.x / MM_TO_IU;
+            d[ "y_mm" ]       = pos.y / MM_TO_IU;
+            return d;
+        }
+    }
+
+    // Second pass: match on pin name.
+    for( SCH_PIN* pin : pins )
+    {
+        if( pin->GetName() == needle )
+        {
+            VECTOR2I pos = pin->GetPosition();
+
+            py::dict d;
+            d[ "ok" ]         = true;
+            d[ "kiid" ]       = kiid_str;
+            d[ "pin_number" ] = std::string( pin->GetNumber().utf8_str() );
+            d[ "pin_name" ]   = std::string( pin->GetName().utf8_str() );
+            d[ "x_mm" ]       = pos.x / MM_TO_IU;
+            d[ "y_mm" ]       = pos.y / MM_TO_IU;
+            return d;
+        }
+    }
+
+    // Not found — return the available pins for diagnosis.
+    py::list available;
+    for( SCH_PIN* pin : pins )
+    {
+        py::dict p;
+        p[ "number" ] = std::string( pin->GetNumber().utf8_str() );
+        p[ "name" ]   = std::string( pin->GetName().utf8_str() );
+        available.append( p );
+    }
+
+    py::dict d;
+    d[ "ok" ]             = false;
+    d[ "error" ]          = std::string( "pin '" ) + pin_id + "' not found on symbol";
+    d[ "available_pins" ] = available;
+    return d;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
 // get_sheet_count
 // ──────────────────────────────────────────────────────────────────────────
 int sch_state_get_sheet_count()
@@ -553,6 +841,68 @@ Returns {ok: bool, kiid: str, lib_id: str, ref_des: str, error?: str}.
 Raises RuntimeError if lib_id parse fails, if no project is loaded, or
 if the underlying LoadSymbol throws IO_ERROR.  Returns ok=False with an
 error field if the lib_id parses but resolves to no symbol.
+)DOC" );
+
+    m.def( "set_symbol_value", &sch_state_set_symbol_value,
+           py::arg( "kiid" ), py::arg( "value" ),
+           R"DOC(Set the visible 'Value' field of a placed symbol.
+
+This is the post-add_symbol companion: after `add_symbol('Device:R', 'R1', ...)`
+the resistor's value reads as 'R'; call `set_symbol_value(kiid, '1k')` to make
+it '1k'.  Wrapped in an SCH_COMMIT so undo works.
+
+Returns {ok: bool, kiid: str, value: str}.
+Raises RuntimeError if no symbol with that kiid is in the hierarchy.
+)DOC" );
+
+    m.def( "set_symbol_field", &sch_state_set_symbol_field,
+           py::arg( "kiid" ), py::arg( "field_name" ), py::arg( "value" ),
+           R"DOC(Set a named field on a placed symbol.  Creates a USER field if absent.
+
+Used both for built-in fields ('Footprint', 'Datasheet', 'Description') and
+for SPICE annotations the netlist generator picks up:
+
+    set_symbol_field(kiid, 'Sim_Device', 'BJT')
+    set_symbol_field(kiid, 'Sim_Model',  '2N3904')
+    set_symbol_field(kiid, 'Sim_Pins',   '1=C 2=B 3=E')
+
+USER fields participate in netlist generation just like mandatory ones.
+
+Returns {ok: bool, kiid: str, field: str, value: str, created: bool}.
+Raises ValueError on empty field name; RuntimeError if symbol kiid not found.
+)DOC" );
+
+    m.def( "set_symbol_rotation", &sch_state_set_symbol_rotation,
+           py::arg( "kiid" ), py::arg( "degrees" ),
+           R"DOC(Set absolute rotation of a placed symbol.
+
+degrees: 0, 90, 180, or 270 (multiples of 90 only).  Mirror flags on the
+symbol are preserved.  Wrapped in an SCH_COMMIT.
+
+Returns {ok: bool, kiid: str, rotation: int}.
+Raises ValueError if degrees isn't a multiple of 90;
+RuntimeError if symbol kiid not found.
+)DOC" );
+
+    m.def( "get_symbol_pin_position", &sch_state_get_symbol_pin_position,
+           py::arg( "kiid" ), py::arg( "pin_id" ),
+           R"DOC(Return the world-coordinate (mm) position of a pin on a placed symbol.
+
+pin_id: matched against pin NUMBER first, then pin NAME.  E.g. for a 2N3904
+        in 'Transistor_BJT:2N3904' (pin numbering 1=B, 2=C, 3=E) you can use
+        either '1' or 'B'.
+
+The position accounts for the symbol's current placement + rotation.  Useful
+for dropping net labels at pin coordinates instead of routing wires:
+
+    p = get_symbol_pin_position(r1_kiid, '2')
+    add_label(p['x_mm'], p['y_mm'], 'NET_OUT')
+
+Returns on success:
+    {ok: True, kiid, pin_number, pin_name, x_mm, y_mm}
+
+Returns on miss (does not raise):
+    {ok: False, error, available_pins: [{number, name}, ...]}
 )DOC" );
 
     m.def( "open_schematic", &sch_state_open_schematic, py::arg( "path" ),
