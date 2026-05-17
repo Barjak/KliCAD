@@ -1,2 +1,7 @@
+# KliCAD is a personal fork of KiCad — see HANDOFF.md for fork details.
+# This funding link redirects to the upstream KiCad project, which does
+# the actual long-term maintenance.  The fork itself does not solicit
+# funding; clicking the GitHub Sponsor button on this repo sends you to
+# donate.kicad.org so you can support the underlying project.
 custom: "https://donate.kicad.org"
 community_bridge: kicad

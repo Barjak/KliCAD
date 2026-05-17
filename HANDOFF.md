@@ -241,6 +241,13 @@ pybind11 ≥ 3.0 header-only; Python 3.13 dev headers.
 
 ## Conventions
 
+- **Push DIRECTLY to the feature branch.** No PRs needed; the previous
+  dev was pushing straight to `feature/always-on-api-server` (the main
+  KliCAD work branch) and to `feature/klicad-bindings` on the Python
+  side. PRs are optional, not required. The repo previously had an
+  inherited-from-upstream lockdown bot that auto-closed PRs; it's been
+  removed, but the direct-push pattern is still the path of least
+  friction. If you do open a PR, you're welcome to self-merge.
 - **Push to GitHub after every commit.** No batching. Both repos have
   `origin = Barjak/...` GitHub. Don't push to `upstream` (gitlab).
 - **Per-binding commits.** Each new binding gets its own commit with a
