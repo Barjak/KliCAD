@@ -438,6 +438,133 @@ bool LIBRARY_MANAGER::CreateGlobalTable( LIBRARY_TABLE_TYPE aType, bool aPopulat
 }
 
 
+size_t LIBRARY_MANAGER::CreateGlobalTableFromRoot( LIBRARY_TABLE_TYPE aType,
+                                                   const wxString& aRootPath )
+{
+    wxString designBlockExt = wxString::Format( wxS( ".%s" ),
+                                                FILEEXT::KiCadDesignBlockLibPathExtension );
+
+    // Probe for the conventional subdirectory layout first
+    // (e.g. <root>/kicad-footprints/Foo.pretty), and fall back to <root> itself.
+    auto pickScanDir = [&]() -> wxString
+    {
+        wxString subdir;
+        switch( aType )
+        {
+        case LIBRARY_TABLE_TYPE::SYMBOL:       subdir = wxT( "kicad-symbols" );       break;
+        case LIBRARY_TABLE_TYPE::FOOTPRINT:    subdir = wxT( "kicad-footprints" );    break;
+        case LIBRARY_TABLE_TYPE::DESIGN_BLOCK: subdir = wxT( "kicad-design-blocks" ); break;
+        default:                               return aRootPath;
+        }
+
+        wxFileName probe( aRootPath, wxEmptyString );
+        probe.AppendDir( subdir );
+
+        if( wxDirExists( probe.GetPath() ) )
+            return probe.GetPath();
+
+        return aRootPath;
+    };
+
+    const wxString scanDir = pickScanDir();
+
+    if( !wxDirExists( scanDir ) )
+    {
+        wxLogTrace( traceLibraries, "CreateGlobalTableFromRoot: scan dir does not exist: %s",
+                    scanDir );
+        return 0;
+    }
+
+    struct Entry { wxString nickname; wxString uri; };
+    std::vector<Entry> entries;
+
+    // Scan a single level only. The kicad-{symbols,footprints,design-blocks} repos all
+    // have a flat top-level layout (Foo.kicad_sym / Foo.pretty / Foo.<dbext>). Recursing
+    // would descend into things like the new exploded `.kicad_symdir/` directories and
+    // mis-count their per-symbol files as libraries.
+    wxDir dir( scanDir );
+    if( !dir.IsOpened() )
+        return 0;
+
+    if( aType == LIBRARY_TABLE_TYPE::SYMBOL )
+    {
+        wxString filter = wxString::Format( wxS( "*.%s" ),
+                                            FILEEXT::KiCadSymbolLibFileExtension );
+        wxString name;
+        for( bool more = dir.GetFirst( &name, filter, wxDIR_FILES ); more;
+             more = dir.GetNext( &name ) )
+        {
+            wxFileName fn( scanDir, name );
+            entries.push_back( { fn.GetName(), fn.GetFullPath() } );
+        }
+    }
+    else
+    {
+        const wxString suffix = ( aType == LIBRARY_TABLE_TYPE::FOOTPRINT )
+                                ? wxS( ".pretty" )
+                                : designBlockExt;
+
+        wxString name;
+        for( bool more = dir.GetFirst( &name, wxEmptyString, wxDIR_DIRS ); more;
+             more = dir.GetNext( &name ) )
+        {
+            if( !name.EndsWith( suffix ) )
+                continue;
+
+            wxFileName sub( scanDir, wxEmptyString );
+            sub.AppendDir( name );
+            wxString nickname = name.substr( 0, name.length() - suffix.length() );
+            entries.push_back( { nickname, sub.GetPath() } );
+        }
+    }
+
+    if( entries.empty() )
+    {
+        wxLogTrace( traceLibraries, "CreateGlobalTableFromRoot: no libraries found under %s",
+                    scanDir );
+        return 0;
+    }
+
+    std::sort( entries.begin(), entries.end(),
+               []( const Entry& a, const Entry& b ) { return a.nickname < b.nickname; } );
+
+    wxFileName fn( DefaultGlobalTablePath( aType ) );
+    LIBRARY_TABLE table( fn, LIBRARY_TABLE_SCOPE::GLOBAL );
+    table.SetType( aType );
+    table.Rows().clear();
+
+    std::unordered_set<wxString, wxStringHash> seenNicks;
+    for( const Entry& e : entries )
+    {
+        wxString nickname = e.nickname;
+        int n = 1;
+        while( !seenNicks.insert( nickname ).second )
+            nickname = wxString::Format( wxS( "%s_%d" ), e.nickname, ++n );
+
+        LIBRARY_TABLE_ROW& row = table.InsertRow();
+        row.SetNickname( nickname );
+        row.SetURI( e.uri );
+        row.SetType( wxT( "KiCad" ) );
+        row.SetDescription( wxString::Format( _( "Initialized from %s" ), scanDir ) );
+    }
+
+    try
+    {
+        PRETTIFIED_FILE_OUTPUTFORMATTER formatter( fn.GetFullPath(),
+                                                   KICAD_FORMAT::FORMAT_MODE::LIBRARY_TABLE );
+        table.Format( &formatter );
+        formatter.Finish();
+    }
+    catch( IO_ERROR& e )
+    {
+        wxLogTrace( traceLibraries, "Exception while saving init'd table: %s", e.What() );
+        return 0;
+    }
+
+    return entries.size();
+}
+
+
 void LIBRARY_MANAGER::LoadGlobalTables( std::initializer_list<LIBRARY_TABLE_TYPE> aTablesToLoad )
 {
     // Cancel any in-progress load
