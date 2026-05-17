@@ -61,6 +61,7 @@
 #include <sch_edit_frame.h>
 #include <schematic.h>
 
+#include <sim/sim_tab.h>
 #include <sim/simulator_frame.h>
 #include <sim/spice_simulator.h>
 #include <sim/sim_types.h>
@@ -424,35 +425,82 @@ py::dict sim_state_command( const std::string& aCmd )
 // ──────────────────────────────────────────────────────────────────────────
 // run_analysis
 // ──────────────────────────────────────────────────────────────────────────
+// Goes through the same workbook flow as the GUI's "Run" button:
+//   1. NewSimTab(cmd) — creates a SIM_PLOT_TAB (or SIM_NOPLOT_TAB for non-
+//      plottables like .op) and makes it current.  This is the canvas
+//      AddTrace later draws on.
+//   2. Run the analysis:
+//        from_schematic=True  -> frame->LoadSimulator(...) + sim->Run()
+//          (regenerates the netlist from the live schematic via the
+//          circuit model — same code path StartSimulation uses).
+//        from_schematic=False -> Command("<bare-form>") on whatever
+//          netlist is currently loaded (e.g. via prior load_netlist()).
+//          Note: the leading '.' must be stripped — `.tran ...` is a
+//          netlist directive that no-ops as an interactive command,
+//          while `tran ...` is the interactive run form.
+//   3. SetSpicePlotName on the tab so subsequent add_trace calls find
+//      the correct ngspice plot.
+//
+// Earlier this binding called `sim->Command(".tran ...")` directly with
+// no tab.  That returned ok=true but the analysis never actually ran
+// (silent no-op on the dot-prefixed form), and even when fixed there
+// was no GUI tab for traces to attach to.  This rewrite mirrors the
+// click-Run-in-the-GUI flow.
 py::dict sim_state_run_analysis( const std::string& aKind, const py::kwargs& aKwargs )
 {
     SIMULATOR_FRAME*                 frame = require_simulator_frame();
     std::shared_ptr<SPICE_SIMULATOR> sim   = require_spice_simulator( frame );
 
-    // py::kwargs is a py::dict subclass — coerce so build_spice_command can
-    // use .contains() / .operator[] uniformly.
     py::dict params = aKwargs;
 
     SIM_TYPE    simType = ST_UNKNOWN;
     std::string cmd     = build_spice_command( aKind, params, &simType );
 
-    bool ok;
-    {
-        py::gil_scoped_release nogil;
+    bool from_schematic = optional_bool_param( params, "from_schematic", false );
 
-        // Command() blocks until ngspice finishes; Run() is for restarting the
-        // bg thread on a previously-loaded netlist.  Sending the analysis as a
-        // raw command is simpler and matches what ngspice's interactive mode
-        // does on '.tran ...' typed at the prompt.
-        ok = sim->Command( cmd );
+    SIM_TAB* tab = frame->NewSimTab( wxString::FromUTF8( cmd ) );
+    if( !tab )
+        throw std::runtime_error( "SIMULATOR_FRAME::NewSimTab returned nullptr" );
+
+    bool ok = false;
+
+    if( from_schematic )
+    {
+        // Reuse the GUI's full pipeline: regenerate netlist from schematic
+        // (LoadSimulator) and kick off the background simulation run.
+        unsigned opts = static_cast<unsigned>( tab->GetSimOptions() );
+
+        {
+            py::gil_scoped_release nogil;
+            ok = frame->LoadSimulator( tab->GetSimCommand(), opts );
+            if( ok )
+                ok = sim->Run();
+        }
+    }
+    else
+    {
+        // Run against whatever netlist ngspice currently holds.  Strip the
+        // leading '.' (build_spice_command emits the netlist-directive form;
+        // Command() needs the interactive form).
+        std::string interactive = cmd;
+        if( !interactive.empty() && interactive[ 0 ] == '.' )
+            interactive.erase( 0, 1 );
+
+        {
+            py::gil_scoped_release nogil;
+            ok = sim->Command( interactive );
+        }
     }
 
+    tab->SetSpicePlotName( sim->CurrentPlotName() );
+
     py::dict result;
-    result[ "ok" ]        = ok;
-    result[ "kind" ]      = aKind;
-    result[ "command" ]   = cmd;
-    result[ "sim_type" ]  = std::string( sim_type_to_str( simType ) );
-    result[ "plot_name" ] = sim->CurrentPlotName().ToStdString();
+    result[ "ok" ]              = ok;
+    result[ "kind" ]            = aKind;
+    result[ "command" ]         = cmd;
+    result[ "sim_type" ]        = std::string( sim_type_to_str( simType ) );
+    result[ "plot_name" ]       = sim->CurrentPlotName().ToStdString();
+    result[ "from_schematic" ]  = from_schematic;
 
     py::list vectors;
     for( const std::string& v : sim->AllVectors() )
@@ -460,6 +508,52 @@ py::dict sim_state_run_analysis( const std::string& aKind, const py::kwargs& aKw
     result[ "vectors" ]   = vectors;
 
     return result;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
+// add_trace
+// ──────────────────────────────────────────────────────────────────────────
+// Thin wrapper around SIMULATOR_FRAME::AddVoltageTrace / AddCurrentTrace.
+// What clicking "Add Signal" in the workbook does, exposed scriptable.
+// Requires a current SIM_TAB — call run_analysis() (or NewSimTab via the
+// workbook) first.
+py::dict sim_state_add_trace( const std::string& aName, const std::string& aKind )
+{
+    SIMULATOR_FRAME* frame = require_simulator_frame();
+
+    if( !frame->GetCurrentSimTab() )
+    {
+        py::dict d;
+        d[ "ok" ]    = false;
+        d[ "error" ] = std::string(
+            "no current SIM_TAB — run an analysis first (run_analysis(...)) "
+            "so there's a plot tab to attach to" );
+        return d;
+    }
+
+    wxString name = wxString::FromUTF8( aName );
+
+    {
+        py::gil_scoped_release nogil;
+
+        if( aKind == "voltage" || aKind == "v" )
+            frame->AddVoltageTrace( name );
+        else if( aKind == "current" || aKind == "i" )
+            frame->AddCurrentTrace( name );
+        else
+        {
+            py::gil_scoped_acquire gil;
+            throw std::invalid_argument(
+                "kind must be 'voltage'/'v' or 'current'/'i' (got '" + aKind + "')" );
+        }
+    }
+
+    py::dict d;
+    d[ "ok" ]   = true;
+    d[ "name" ] = aName;
+    d[ "kind" ] = aKind;
+    return d;
 }
 
 
@@ -715,5 +809,24 @@ Returns:
   }
 
 Use plot='' for current plot, or pass an explicit plot name to switch first.
+)DOC" );
+
+    m.def( "add_trace", &sim_state_add_trace,
+           py::arg( "name" ),
+           py::arg( "kind" ) = std::string( "voltage" ),
+           R"DOC(Add a signal trace to the current simulator plot tab.
+
+What clicking "Add Signal" in the simulator workbook does, exposed scriptable.
+
+name: net name for voltage traces (e.g. 'nc1') or device ref-des for current
+      traces (e.g. 'R1').  No 'v(...)' or 'i(...)' wrapping — the underlying
+      AddVoltageTrace / AddCurrentTrace handles that.
+
+kind: 'voltage' (default) | 'v' | 'current' | 'i'
+
+Requires a current SIM_TAB — call run_analysis(...) first so there's a plot
+tab to attach to.
+
+Returns {ok, name, kind} on success, or {ok: False, error} if no current tab.
 )DOC" );
 }
