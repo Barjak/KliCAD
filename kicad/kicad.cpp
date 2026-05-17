@@ -39,6 +39,8 @@
 #include <file_history.h>
 #include <hotkeys_basic.h>
 #include <kiway.h>
+#include <libraries/library_manager.h>
+#include <libraries/library_table.h>
 #include <macros.h>
 #include <paths.h>
 #include <richio.h>
@@ -54,6 +56,7 @@
 
 #include <git/git_backend.h>
 #include <git/libgit_backend.h>
+#include <cstdio>
 #include <stdexcept>
 
 #include "pgm_kicad.h"
@@ -117,6 +120,10 @@ bool PGM_KICAD::OnPgmInit()
         { wxCMD_LINE_SWITCH, nullptr, "software-rendering", "Use software rendering instead of OpenGL",
           wxCMD_LINE_VAL_NONE, 0 },
 #endif
+        { wxCMD_LINE_OPTION, nullptr, "init-libraries",
+          "Populate global library tables from <root> (looks for kicad-{symbols,footprints,design-blocks} "
+          "subdirs, else scans <root> directly) and exit. Overwrites any existing global tables.",
+          wxCMD_LINE_VAL_STRING, 0 },
         { wxCMD_LINE_PARAM, nullptr, nullptr, "File to load", wxCMD_LINE_VAL_STRING,
           wxCMD_LINE_PARAM_MULTIPLE | wxCMD_LINE_PARAM_OPTIONAL },
         { wxCMD_LINE_NONE, nullptr, nullptr, nullptr, wxCMD_LINE_VAL_NONE, 0 }
@@ -125,6 +132,34 @@ bool PGM_KICAD::OnPgmInit()
     wxCmdLineParser parser( App().argc, App().argv );
     parser.SetDesc( desc );
     parser.Parse( false );
+
+    wxString initLibrariesRoot;
+
+    if( parser.Found( "init-libraries", &initLibrariesRoot ) )
+    {
+        // Bring up enough of the program to know the user config dir, then write the
+        // global library tables and exit without launching any frame.
+        if( !InitPgm( false ) )
+            return false;
+
+        struct { LIBRARY_TABLE_TYPE type; const char* label; } types[] = {
+            { LIBRARY_TABLE_TYPE::SYMBOL,       "symbols" },
+            { LIBRARY_TABLE_TYPE::FOOTPRINT,    "footprints" },
+            { LIBRARY_TABLE_TYPE::DESIGN_BLOCK, "design blocks" },
+        };
+
+        for( const auto& t : types )
+        {
+            size_t n = LIBRARY_MANAGER::CreateGlobalTableFromRoot( t.type, initLibrariesRoot );
+            wxString line = wxString::Format( wxT( "init-libraries: %s -> %zu rows" ),
+                                              wxString::FromUTF8( t.label ), n );
+            std::fputs( line.utf8_string().c_str(), stdout );
+            std::fputc( '\n', stdout );
+        }
+
+        OnPgmExit();
+        return false;   // do not enter the main loop
+    }
 
     FRAME_T appType = KICAD_MAIN_FRAME_T;
 

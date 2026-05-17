@@ -270,6 +270,23 @@ public:
 
     static bool CreateGlobalTable( LIBRARY_TABLE_TYPE aType, bool aPopulateDefaultLibraries );
 
+    /**
+     * Write a global library table populated by scanning @p aRootPath for libraries of the
+     * given type (footprint .pretty dirs, symbol .kicad_sym files, design-block dirs).
+     *
+     * Unlike CreateGlobalTable(), this does not chain to the stock template path: every
+     * discovered library is added as a concrete row.  Intended for dev/CI setups that don't
+     * have a system install but do have the standard library repos checked out somewhere
+     * (e.g. via `--init-libraries`).
+     *
+     * @param aType       which table to write (SYMBOL / FOOTPRINT / DESIGN_BLOCK)
+     * @param aRootPath   directory to scan.  If a kicad-{symbols,footprints,design-blocks}
+     *                    subdirectory exists for @p aType, scans that; otherwise scans
+     *                    @p aRootPath directly.
+     * @return            number of library rows written (0 on write failure or no libraries found)
+     */
+    static size_t CreateGlobalTableFromRoot( LIBRARY_TABLE_TYPE aType, const wxString& aRootPath );
+
     /// (Re)loads the global library tables in the given list, or all tables if no list is given
     void LoadGlobalTables( std::initializer_list<LIBRARY_TABLE_TYPE> aTablesToLoad = {} );
 
