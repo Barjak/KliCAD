@@ -34,6 +34,7 @@
 #include <lib_id.h>
 #include <lib_symbol.h>
 #include <layer_ids.h>
+#include <base_units.h>
 #include <math/vector2d.h>
 
 #include <sch_edit_frame.h>
@@ -63,18 +64,21 @@ namespace py = pybind11;
 namespace
 {
 
-// Position scaling: mm in, schematic IU out.  Schematic IU is 100nm per IU
-// (10000 per mm) — NOT the 1e6 PCB scale.  See SCH_IU_PER_MM in
-// include/base_units.h.  An earlier version of this binding used 1e6 here,
-// which silently placed every add_symbol/add_wire 100x out of canvas; the
-// schematic looked normal because KiCad auto-zoomed.  Fixed when
-// get_symbol_pin_position revealed the discrepancy.
-constexpr double MM_TO_IU = 1e4;
+// Position scaling: mm <-> schematic IU.  Use schIUScale (from base_units.h),
+// NOT a hand-rolled constant — schIUScale.mmToIU() rounds half-up, while
+// `(int)(x_mm * 10000)` truncates.  The truncation form silently placed
+// labels 1 IU off the pin for any mm value whose binary-float product with
+// 1e4 fell on the "wrong side" of a hundredth (e.g. 194.92 -> 1949199.999...
+// -> truncated to 1949199 IU instead of 1949200), making the netlist
+// generator leave that pin dangling.  See test_smoke_oscillator demo.
+//
+// History: an even earlier version used 1e6 (PCB scale) here and placed
+// everything 100x out of canvas.  Fixed to 1e4 in commit 06ac615c21.  This
+// commit fixes the residual rounding error.
 
-inline VECTOR2I mm_to_nm( double x_mm, double y_mm )   // legacy name; now IU
+inline VECTOR2I mm_to_iu( double x_mm, double y_mm )
 {
-    return VECTOR2I( static_cast<int>( x_mm * MM_TO_IU ),
-                     static_cast<int>( y_mm * MM_TO_IU ) );
+    return VECTOR2I( schIUScale.mmToIU( x_mm ), schIUScale.mmToIU( y_mm ) );
 }
 
 
@@ -168,8 +172,8 @@ py::object sch_state_add_wire( double start_x_mm, double start_y_mm,
     if( !screen )
         throw std::runtime_error( "SCH_EDIT_FRAME has no active SCH_SCREEN" );
 
-    VECTOR2I start = mm_to_nm( start_x_mm, start_y_mm );
-    VECTOR2I end   = mm_to_nm( end_x_mm,   end_y_mm   );
+    VECTOR2I start = mm_to_iu( start_x_mm, start_y_mm );
+    VECTOR2I end   = mm_to_iu( end_x_mm,   end_y_mm   );
 
     SCH_LINE* wire = new SCH_LINE( start, LAYER_WIRE );
     wire->SetEndPoint( end );
@@ -201,7 +205,7 @@ py::object sch_state_add_junction( double x_mm, double y_mm )
     if( !screen )
         throw std::runtime_error( "SCH_EDIT_FRAME has no active SCH_SCREEN" );
 
-    VECTOR2I pos = mm_to_nm( x_mm, y_mm );
+    VECTOR2I pos = mm_to_iu( x_mm, y_mm );
 
     // SCH_EDIT_FRAME::AddJunction is declared in the header but has no
     // corresponding definition in this build — construct directly instead.
@@ -235,7 +239,7 @@ py::object sch_state_add_label( double x_mm, double y_mm,
     if( !screen )
         throw std::runtime_error( "SCH_EDIT_FRAME has no active SCH_SCREEN" );
 
-    VECTOR2I pos = mm_to_nm( x_mm, y_mm );
+    VECTOR2I pos = mm_to_iu( x_mm, y_mm );
     wxString wxText = wxString::FromUTF8( text.c_str() );
 
     SCH_LABEL_BASE* label = nullptr;
@@ -336,7 +340,7 @@ py::object sch_state_add_symbol( const std::string& lib_id_str,
         return result;
     }
 
-    VECTOR2I pos = mm_to_nm( x_mm, y_mm );
+    VECTOR2I pos = mm_to_iu( x_mm, y_mm );
 
     // SCH_SYMBOL ctor wraps the lib_symbol (clones internally via SetLibSymbol).
     // Pass the current sheet so the instance bookkeeping is set up correctly.
@@ -604,8 +608,8 @@ py::dict sch_state_get_symbol_pin_position( const std::string& kiid_str,
             d[ "kiid" ]       = kiid_str;
             d[ "pin_number" ] = std::string( pin->GetNumber().utf8_str() );
             d[ "pin_name" ]   = std::string( pin->GetName().utf8_str() );
-            d[ "x_mm" ]       = pos.x / MM_TO_IU;
-            d[ "y_mm" ]       = pos.y / MM_TO_IU;
+            d[ "x_mm" ]       = schIUScale.IUTomm( pos.x );
+            d[ "y_mm" ]       = schIUScale.IUTomm( pos.y );
             return d;
         }
     }
@@ -622,8 +626,8 @@ py::dict sch_state_get_symbol_pin_position( const std::string& kiid_str,
             d[ "kiid" ]       = kiid_str;
             d[ "pin_number" ] = std::string( pin->GetNumber().utf8_str() );
             d[ "pin_name" ]   = std::string( pin->GetName().utf8_str() );
-            d[ "x_mm" ]       = pos.x / MM_TO_IU;
-            d[ "y_mm" ]       = pos.y / MM_TO_IU;
+            d[ "x_mm" ]       = schIUScale.IUTomm( pos.x );
+            d[ "y_mm" ]       = schIUScale.IUTomm( pos.y );
             return d;
         }
     }

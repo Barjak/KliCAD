@@ -11,6 +11,7 @@
 #include <kiway_holder.h>
 #include <kiway_player.h>
 
+#include <base_units.h>
 #include <eda_base_frame.h>
 #include <eda_draw_frame.h>
 #include <kiid.h>
@@ -373,7 +374,6 @@ py::list hier_list_sheet_pins( const std::string& sheet_uuid )
         throw std::runtime_error( std::string( "no SCH_SHEET with uuid '" )
                                   + sheet_uuid + "' in the hierarchy" );
 
-    constexpr double IU_TO_MM = 1.0 / 1e6;
     py::list out;
 
     for( SCH_SHEET_PIN* pin : found->GetPins() )
@@ -384,8 +384,11 @@ py::list hier_list_sheet_pins( const std::string& sheet_uuid )
         d[ "uuid" ] = pin->m_Uuid.AsStdString();
         d[ "name" ] = std::string( pin->GetText().utf8_str() );
         VECTOR2I pos = pin->GetPosition();
-        d[ "x_mm" ] = pos.x * IU_TO_MM;
-        d[ "y_mm" ] = pos.y * IU_TO_MM;
+        // Use schIUScale (100nm per IU) — not pcbIUScale (1nm per IU); this
+        // file is on the schematic side.  Previous version divided by 1e6
+        // and reported every pin position 100x too small.
+        d[ "x_mm" ] = schIUScale.IUTomm( pos.x );
+        d[ "y_mm" ] = schIUScale.IUTomm( pos.y );
 
         const char* side = "undefined";
         switch( pin->GetSide() )
