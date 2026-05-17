@@ -382,8 +382,25 @@ py::dict sch_state_open_schematic( const std::string& aPath )
         throw std::invalid_argument( "open_schematic: path is empty" );
 
     SCH_EDIT_FRAME* frame = require_sch_edit_frame();
+    SCHEMATIC&      sch   = frame->Schematic();
+    wxString        wxPath = wxString::FromUTF8( aPath.c_str() );
 
-    std::vector<wxString> files = { wxString::FromUTF8( aPath.c_str() ) };
+    // Same defensive shortcut as pcb_state.open_board.  Re-opening the
+    // currently-loaded schematic via OpenProjectFiles has the same
+    // dangling-nested-settings risk on the PCB side; play it safe and
+    // no-op when the path matches.
+    if( sch.IsValid() && sch.GetFileName() == wxPath )
+    {
+        py::dict d;
+        d[ "ok" ]          = true;
+        d[ "path" ]        = aPath;
+        d[ "sheet_count" ] = sch_state_get_sheet_count();
+        d[ "note" ]        = std::string(
+            "schematic already open at this path; no reload performed" );
+        return d;
+    }
+
+    std::vector<wxString> files = { wxPath };
     bool ok = frame->OpenProjectFiles( files, /*aCtl*/ 0 );
 
     if( frame->GetCanvas() )

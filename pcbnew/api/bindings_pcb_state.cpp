@@ -493,9 +493,33 @@ py::dict pcb_state_open_board( const std::string& aPath )
     if( aPath.empty() )
         throw std::invalid_argument( "open_board: path is empty" );
 
-    PCB_EDIT_FRAME* frame = require_pcb_edit_frame();
+    PCB_EDIT_FRAME* frame    = require_pcb_edit_frame();
+    BOARD*          oldBoard = frame->GetBoard();
+    wxString        wxPath   = wxString::FromUTF8( aPath.c_str() );
 
-    std::vector<wxString> files = { wxString::FromUTF8( aPath.c_str() ) };
+    // If the editor already has this exact board open, no-op.  Calling
+    // PCB_EDIT_FRAME::OpenProjectFiles a second time with the same path
+    // is NOT safe: setProject=false skips the up-front ClearProject /
+    // UnloadProject cleanup, then BOARD_LOADER::Load eagerly calls
+    // SetProject on the freshly-loaded board which reassigns
+    // project.m_BoardSettings to point at the new board's settings.
+    // The subsequent SetBoard() calls oldBoard->ClearProject() which
+    // tries to ReleaseNestedSettings on the stale pointer → SIGSEGV in
+    // BOARD::ClearProject.  No "force reload" arg yet; if you need one,
+    // close+reopen via show_frame or use a different open_board path.
+    if( oldBoard && oldBoard->GetFileName() == wxPath )
+    {
+        py::dict d;
+        d[ "ok" ]       = true;
+        d[ "path" ]     = aPath;
+        d[ "filename" ] = std::string( oldBoard->GetFileName().utf8_str() );
+        d[ "note" ]     = std::string(
+            "board already open at this path; no reload performed "
+            "(force-reload not supported — see binding source for why)" );
+        return d;
+    }
+
+    std::vector<wxString> files = { wxPath };
     bool ok = frame->OpenProjectFiles( files, /*aCtl*/ 0 );
 
     refresh_pcb_canvas( frame );
