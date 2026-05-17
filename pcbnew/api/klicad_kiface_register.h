@@ -30,11 +30,14 @@
 
 // Per-binding register functions (one per kiface-resident bindings_*.cpp).
 void klicad_register_3d_resolver_bindings( pybind11::module_& m );
+void klicad_register_3d_viewer_bindings( pybind11::module_& m );
 void klicad_register_drc_rules_bindings( pybind11::module_& m );
 void klicad_register_footprint_editor_bindings( pybind11::module_& m );
+void klicad_register_netinfo_bindings( pybind11::module_& m );
 void klicad_register_pcb_actions_bindings( pybind11::module_& m );
 void klicad_register_pcb_state_bindings( pybind11::module_& m );
 void klicad_register_stackup_bindings( pybind11::module_& m );
+void klicad_register_sync_bindings( pybind11::module_& m );
 
 
 // Called once from IFACE::OnKifaceStart.  Idempotent (does nothing on

@@ -78,12 +78,18 @@ void klicad_register_pcbnew_bindings()
             { "kicad_native_3d_resolver",
               "KliCAD 3D model path resolver (FILENAME_RESOLVER, kiface-loaded).",
               &klicad_register_3d_resolver_bindings },
+            { "kicad_native_3d_viewer",
+              "KliCAD 3D viewer programmatic control (kiface-loaded).",
+              &klicad_register_3d_viewer_bindings },
             { "kicad_native_drc_rules",
               "KliCAD DRC custom-rules + length report binding (kiface-loaded).",
               &klicad_register_drc_rules_bindings },
             { "kicad_native_footprint_editor",
               "KliCAD footprint library editor (kiface-loaded).",
               &klicad_register_footprint_editor_bindings },
+            { "kicad_native_netinfo",
+              "KliCAD BOARD net inspection / analysis (kiface-loaded).",
+              &klicad_register_netinfo_bindings },
             { "kicad_native_pcb_actions",
               "KliCAD pcbnew TOOL_ACTION runner (kiface-loaded).",
               &klicad_register_pcb_actions_bindings },
@@ -93,6 +99,9 @@ void klicad_register_pcbnew_bindings()
             { "kicad_native_stackup",
               "KliCAD board stackup CRUD binding (kiface-loaded).",
               &klicad_register_stackup_bindings },
+            { "kicad_native_sync",
+              "KliCAD schematic -> PCB sync binding (kiface-loaded).",
+              &klicad_register_sync_bindings },
         };
 
         for( const Entry& e : entries )

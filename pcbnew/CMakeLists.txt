@@ -525,11 +525,14 @@ if( KICAD_IPC_API )
     set( PCBNEW_SRCS ${PCBNEW_SRCS}
         api/api_handler_pcb.cpp
         api/bindings_3d_resolver.cpp
+        api/bindings_3d_viewer.cpp
         api/bindings_drc_rules.cpp
         api/bindings_footprint_editor.cpp
+        api/bindings_netinfo.cpp
         api/bindings_pcb_actions.cpp
         api/bindings_pcb_state.cpp
         api/bindings_stackup.cpp
+        api/bindings_sync.cpp
         api/board_context.cpp
         api/klicad_kiface_register.cpp
         )
