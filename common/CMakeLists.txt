@@ -349,7 +349,9 @@ if( KICAD_IPC_API )
         api/api_server.cpp
         # bindings_3d_resolver.cpp moved to pcbnew kiface (Pattern B) — FILENAME_RESOLVER
         # is in static libcommon, not shared libkicommon.
+        api/bindings_bitmap2component.cpp
         api/bindings_design_blocks.cpp
+        api/bindings_diff.cpp
         api/bindings_drc.cpp
         api/bindings_erc.cpp
         api/bindings_export_3d.cpp
