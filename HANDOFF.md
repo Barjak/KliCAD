@@ -289,13 +289,23 @@ the demo started by loading a fresh project. Once crash #2 is fixed (or
 worked around by doing the demo against the existing fixture project),
 the rest should just run.
 
-## Memory file (Claude Code's persistent memory across sessions)
+## Deeper context: `docs/PROJECT_NOTES.md`
 
-The previous dev kept a memory file at
-`~/.claude/projects/-Users-shopnew/memory/klicad_fork.md`. It has
-overlapping content with this handoff (architecture notes, build setup,
-known gotchas, wave-by-wave inventory). Worth a read but not the source
-of truth for status — this HANDOFF.md is.
+The previous dev's persistent memory has been exported to
+`docs/PROJECT_NOTES.md` in this repo. It covers:
+
+- Paradigm rationale + architecture (deeper than the summary here)
+- Wave-by-wave binding rollout history (wave 1 through wave 5 + post-5)
+- The two structural gotchas (libkicommon-vs-libcommon, SCH_IO_MGR not
+  libkicommon-reachable)
+- Conventions (push-after-commit, never-PR-upstream)
+- "How to use" — external Python client patterns + façade examples
+- The pre-existing KiCad IPC API the fork builds on (always-on
+  patches, socket details, two CLI surfaces)
+- Build setup (Mac-specific bits clearly labeled)
+- Operating patterns (restart policy, dialog dismissal, autosave)
+
+This HANDOFF.md is the status doc; PROJECT_NOTES.md is the reference.
 
 ## Quick-start (Linux)
 
