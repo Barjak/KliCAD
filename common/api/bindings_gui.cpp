@@ -22,11 +22,14 @@
 #include <kiway_holder.h>
 #include <kiway_player.h>
 
+#include <wx/button.h>
 #include <wx/dialog.h>
+#include <wx/event.h>
 #include <wx/string.h>
 #include <wx/toplevel.h>
 #include <wx/window.h>
 
+#include <functional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -240,6 +243,139 @@ py::dict dismiss_dialogs( const std::string& title_substr )
 }
 
 
+// Walk every wxButton descendant of `parent` depth-first, applying `visit`.
+void walk_buttons( wxWindow* parent, const std::function<void(wxButton*)>& visit )
+{
+    if( !parent )
+        return;
+    for( wxWindow* child : parent->GetChildren() )
+    {
+        if( wxButton* btn = dynamic_cast<wxButton*>( child ) )
+            visit( btn );
+        walk_buttons( child, visit );
+    }
+}
+
+
+py::list list_dialog_buttons( const std::string& title_substr )
+{
+    py::list out;
+    for( wxWindow* w : wxTopLevelWindows )
+    {
+        wxDialog* dlg = dynamic_cast<wxDialog*>( w );
+        if( !dlg )
+            continue;
+
+        if( !title_substr.empty() )
+        {
+            if( dlg->GetTitle().Find( wxString::FromUTF8( title_substr ) ) == wxNOT_FOUND )
+                continue;
+        }
+
+        const wxString title = dlg->GetTitle();
+        const wxWindow* def  = dlg->GetDefaultItem();
+        walk_buttons( dlg, [&]( wxButton* btn )
+        {
+            py::dict d;
+            d[ "dialog_title" ] = title.ToStdString();
+            d[ "label" ]        = btn->GetLabel().ToStdString();
+            d[ "id" ]           = btn->GetId();
+            d[ "enabled" ]      = btn->IsEnabled();
+            d[ "is_default" ]   = ( btn == def );
+            out.append( d );
+        } );
+    }
+    return out;
+}
+
+
+py::dict click_dialog_button( const std::string& button_label,
+                              const std::string& dialog_title_substr )
+{
+    wxDialog* target_dlg = nullptr;
+    wxButton* target_btn = nullptr;
+
+    for( wxWindow* w : wxTopLevelWindows )
+    {
+        wxDialog* dlg = dynamic_cast<wxDialog*>( w );
+        if( !dlg )
+            continue;
+
+        if( !dialog_title_substr.empty() )
+        {
+            if( dlg->GetTitle().Find( wxString::FromUTF8( dialog_title_substr ) ) == wxNOT_FOUND )
+                continue;
+        }
+
+        const wxString needle = wxString::FromUTF8( button_label );
+        walk_buttons( dlg, [&]( wxButton* btn )
+        {
+            if( target_btn )
+                return; // already found
+
+            // Match against the raw label, or a stripped form without wx's
+            // "&" mnemonic markers (so "Annotate" matches "&Annotate").
+            wxString label = btn->GetLabel();
+            wxString stripped = label;
+            stripped.Replace( wxS( "&" ), wxS( "" ) );
+
+            if( label.Find( needle ) != wxNOT_FOUND
+                || stripped.Find( needle ) != wxNOT_FOUND )
+            {
+                target_dlg = dlg;
+                target_btn = btn;
+            }
+        } );
+
+        if( target_btn )
+            break;
+    }
+
+    py::dict result;
+    if( !target_btn )
+    {
+        result[ "ok" ]    = false;
+        result[ "error" ] = std::string( "no matching button in any open dialog" );
+        return result;
+    }
+
+    const int btn_id = target_btn->GetId();
+
+    // Two delivery paths:
+    //  (a) Modal dialog + standard ID (OK/Cancel/Yes/No/Apply/Close): EndModal(id)
+    //      is the simplest path — same effect as if the user clicked, and KiCad
+    //      relies on standard-ID semantics throughout.
+    //  (b) Otherwise: post a wxEVT_BUTTON command event to the button's own
+    //      handler.  That's what wxWidgets does internally on a click, so any
+    //      custom handler the dialog registered fires.
+    auto is_std_modal_id = []( int id )
+    {
+        return id == wxID_OK || id == wxID_CANCEL || id == wxID_YES || id == wxID_NO
+               || id == wxID_APPLY || id == wxID_CLOSE;
+    };
+
+    bool used_endmodal = false;
+    if( target_dlg->IsModal() && is_std_modal_id( btn_id ) )
+    {
+        target_dlg->EndModal( btn_id );
+        used_endmodal = true;
+    }
+    else
+    {
+        wxCommandEvent ev( wxEVT_BUTTON, btn_id );
+        ev.SetEventObject( target_btn );
+        target_btn->GetEventHandler()->ProcessEvent( ev );
+    }
+
+    result[ "ok" ]            = true;
+    result[ "dialog_title" ]  = target_dlg->GetTitle().ToStdString();
+    result[ "button_label" ]  = target_btn->GetLabel().ToStdString();
+    result[ "button_id" ]     = btn_id;
+    result[ "via_end_modal" ] = used_endmodal;
+    return result;
+}
+
+
 py::list list_open_frames()
 {
     py::list out;
@@ -314,4 +450,42 @@ error popups without affecting unrelated dialogs the user has open.
     m.def( "list_open_frames", &list_open_frames,
            "Return a list of dicts describing every currently-open top-level "
            "window in the KiCad process (class, title, is_kiway_*, is_shown)." );
+
+    m.def( "list_dialog_buttons", &list_dialog_buttons,
+           py::arg( "title_substr" ) = std::string(),
+           R"DOC(Enumerate every wxButton in every currently-open wxDialog.
+
+Returns a list of ``{dialog_title, label, id, enabled, is_default}`` dicts.
+Use this to discover which actions are available before driving a dialog
+programmatically.
+
+If ``title_substr`` is non-empty, only inspects dialogs whose title contains
+that substring (case-sensitive).
+)DOC" );
+
+    m.def( "click_dialog_button", &click_dialog_button,
+           py::arg( "button_label" ),
+           py::arg( "dialog_title_substr" ) = std::string(),
+           R"DOC(Click a button in an open dialog (substring match on the label).
+
+For modal dialogs with standard button IDs (OK/Cancel/Yes/No/Apply/Close),
+this is implemented as EndModal(id) — semantically identical to the user
+clicking the button.  For everything else, it posts a wxEVT_BUTTON command
+event to the button so the dialog's own handler fires.
+
+``button_label`` is matched both against the raw wx label and against a
+version with the ``&`` mnemonic markers stripped (so 'Annotate' matches
+'&Annotate').
+
+If ``dialog_title_substr`` is non-empty, only matches buttons in dialogs
+whose title contains that substring.
+
+Returns ``{ok, dialog_title, button_label, button_id, via_end_modal}`` on
+success, or ``{ok: False, error}`` if no matching button was found.
+
+Note: this binding is preventive, not curative.  If a modal dialog is
+already blocking the main thread when you call it, the wxEvent never gets
+dispatched until something else unblocks the main loop.  Pair with a
+pre-flight ``dismiss_dialogs`` or a known-good wmctrl close.
+)DOC" );
 }
