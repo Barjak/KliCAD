@@ -45,6 +45,17 @@ set( CVPCB_SRCS
     tools/cvpcb_fpviewer_selection_tool.cpp
     )
 
+if( KICAD_IPC_API )
+    # KliCAD kiface-resident bindings: registered at OnKifaceStart via
+    # klicad_kiface_register, NOT via PYBIND11_EMBEDDED_MODULE (which can't
+    # be used in a lazy-loaded kiface — see klicad_kiface_register.h).
+    set( CVPCB_SRCS
+        ${CVPCB_SRCS}
+        api/bindings_cvpcb.cpp
+        api/klicad_kiface_register.cpp
+    )
+endif()
+
 if( WIN32 )
     if( MINGW )
         # CVPCB_RESOURCES variable is set by the macro.

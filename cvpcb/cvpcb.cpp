@@ -35,6 +35,10 @@
 #include <kiface_ids.h>
 #include <project_pcb.h>
 
+#if defined( KICAD_IPC_API )
+#include <api/klicad_kiface_register.h>
+#endif
+
 namespace CV {
 
 int testFootprintLink( const wxString& aFootprint, PROJECT* aProject )
@@ -142,6 +146,12 @@ bool IFACE::OnKifaceStart( PGM_BASE* aProgram, int aCtlBits, KIWAY* aKiway )
     aProgram->GetSettingsManager().RegisterSettings( KifaceSettings() );
 
     start_common( aCtlBits );
+
+#if defined( KICAD_IPC_API )
+    // KliCAD: register kiface-resident pybind11 bindings now that this
+    // kiface is loaded.  See cvpcb/api/klicad_kiface_register.h.
+    klicad_register_cvpcb_bindings();
+#endif
 
     return true;
 }
