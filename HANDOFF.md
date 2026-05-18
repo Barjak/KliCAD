@@ -307,33 +307,90 @@ on branch `feature/klicad-bindings`.
 - `tests/test_circuit.py`: 8 tests covering build, validation, round-
   trip, deck well-formedness, and live ngspice oscillation verification.
 
-### Phase B (PRELIMINARY — needs Linux validation)
+### Phase B (DONE — verified end-to-end on Mac through GUI Play button)
 - `_kicad_sch.py`: `to_kicad_sch(path)` — uses the pybind primitives
   (`add_symbol`, `set_symbol_value`, `set_symbol_field`,
   `get_symbol_pin_position`, `add_label`) to author into KliCAD's live
-  schematic editor and save. Sets `Sim.Library` on each model-bearing
-  part so the GUI Play button regenerates a complete deck.
-- `examples/led_oscillator_canonical.py`: end-to-end demo replacing
-  the old `led_oscillator_demo.py`. Run with `--setup-only` to write
-  the project files, then launch KliCAD on the project, then re-run.
+  schematic editor and save. Sets `Sim.Library` + `Sim.Name` on each
+  model-bearing part.
+- `examples/led_oscillator_canonical.py`: end-to-end demo. `--setup-only`
+  writes project files; launch KliCAD on them; re-run without
+  `--setup-only` to drive the full demo.
 
-**Known concerns Linux dev should verify:**
+**Verified end-to-end flow on Mac (commits `b527a7e` + `4cbd476`):**
 
-1. Live round-trip not yet validated end-to-end. The Mac test was
-   blocked by an UnsavedChangesDialog when `_bootstrap_project_files`
-   touched a `.kicad_sch` KiCad had open. **Fix already applied in the
-   committed code** (only write the stub if the file doesn't exist;
-   never clobber a live file); needs verification.
-2. The `Sim.Library` field name is correct (`.` separator, not `_`) —
-   confirmed against upstream lib symbol files. The `Sim.Model`
-   override is set unconditionally for parts whose model name might
-   differ from the symbol's Value. Verify both translate to a working
-   `.include` in the GUI's generated netlist.
-3. Power symbol placement is best-effort and prints a warning on
-   failure (some power names may not have a matching `power:*` lib
-   symbol). Robustness can be improved.
-4. Layout is a simple horizontal row — fine for proof of concept,
-   ugly for real designs. Phase C is graph-aware placement.
+1. Python canonical → `to_spice_deck()` → ngspice runs → V(NL) swings 4.96V
+   rail-to-rail, V(NR) 3.40V clamped by LED, 3469 samples.
+2. Python canonical → `to_kicad_sch()` writes the live schematic with
+   10 parts, 22 pin labels, Sim.Library + Sim.Name fields set.
+3. **KiCad's OWN schematic→SPICE export** (the same code path the GUI
+   Play button uses) produces a clean deck with `.include models.lib`,
+   correct BJT C-B-E pin order, real model names (no more
+   `Q1.unknown`). Identical sim result to (1).
+4. GUI Play button → `run_analysis(kind='tran', step='1ms', stop='3s', uic=True)`
+   → 3561 samples → identical oscillation visible in the simulator
+   plot canvas.
+
+**Lessons baked into the code:**
+
+1. `Sim.Name` is the model-name field KiCad 10 expects, NOT `Sim.Model`
+   (KiCad 7 era).  Without it the netlist generator emits
+   `<ref>.unknown`.  Same field absence also prevented Sim.Pins
+   consultation, so pin order came out wrong (KiCad pin-num order
+   instead of SPICE C-B-E).
+2. Empty `(sym_lib_table)` is the right project sym-lib-table to write
+   on KiCad 10 — let the global table resolve standard libs.  The
+   env var is `${KICAD10_SYMBOL_DIR}` (versioned) and the libs are
+   in exploded `.kicad_symdir/` layout; project-scoped tables with
+   the old `${KICAD_SYMBOL_DIR}` / single-file paths break.
+3. `to_kicad_sch()` refuses to run on a non-empty schematic (returns
+   a clear error pointing at the workaround) — appending would
+   double-place every symbol.  Real fix is Phase C diff/apply.
+4. The `ModalAnnotate` dialog fires from `SCH_EDIT_FRAME::ReadyToNetlist`
+   when CheckAnnotate finds something not-fully-annotated, even
+   though refs are unique.  Blocks IPC because the modal loop holds
+   the main thread; `click_dialog_button` CAN'T dismiss it (the IPC
+   handler is queued behind the modal).  Workaround: pre-call
+   `kicad_native_annotation.annotate(scope='all')` before any sim
+   spawn; proper fix is a thread-local "embedded interp active"
+   flag that switches `ModalAnnotate` to silent annotation.
+5. Net names in KiCad-generated netlists have a leading `/`
+   (hierarchical naming).  `get_vector('v(nl)')` won't match; use
+   `get_vector('v(/nl)')`.
+
+### Phase C (NEXT — design sketched, not implemented)
+
+Single-source-of-truth pipeline now works, but `to_kicad_sch()` is
+full-rebuild only.  Iterating on a Circuit object should NOT tear down
++ rebuild — would lose schematic position data, manual cosmetic
+touches, ratsnest assignments, sheet layout.  Incremental update
+preserves the non-canonical data while propagating canonical changes.
+
+Pieces needed:
+
+1. **`Circuit.from_kicad_sch(path)`** — reverse converter, extracts
+   the canonical slice (refs, values, models, pin→net mappings, ICs,
+   analyses). Skips positions, fonts, rotations, sheet layout,
+   ratsnest, user-added text. Probably direct s-exp parsing like
+   `bindings_diff.cpp` — no KiCad needed, faster than pybind.
+2. **`Circuit.diff(other) -> CircuitDiff`** — operation list keyed by
+   ref designator. Ops: `AddPart`, `RemovePart`, `SetValue`,
+   `SetModel`, `RewireConnection`, `SetIC`, `AddAnalysis`,
+   `RemoveAnalysis`.
+3. **`CircuitDiff.apply(target_sch, kicad=)`** — executes ops against
+   live schematic. Some need new bindings: `delete_symbol`,
+   `find_items_near(x, y)` for finding labels by position to rewire.
+4. **Round-trip property test**: assert `from_kicad_sch(incremental_apply)
+   == from_kicad_sch(full_rebuild)` produces the same canonical slice.
+   Positions won't match (incremental preserves, full-rebuild grids
+   fresh) but the canonical slice will. Strong correctness oracle
+   without graph-isomorphism-NP machinery — we control the labeling.
+
+Naming convention going forward:
+- `to_kicad_sch_full(path)` — tear-down + rebuild (current
+  implementation; oracle for property tests).
+- `to_kicad_sch_incremental(path)` — diff existing + apply; default
+  for users.
 
 ### Suggested validation flow on Linux
 ```bash
