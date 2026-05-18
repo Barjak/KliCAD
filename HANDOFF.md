@@ -153,6 +153,59 @@ ss.open_schematic({PRJ + '/x.kicad_sch'!r})   # <-- crashes here
 """)
 ```
 
+## Schematic-export ground-naming gap (NEW — 2026-05-18)
+
+Discovered while building a buck-converter demo with the canonical
+circuit DSL.  The DSL places `power:GND` symbols for ground nets
+*and* drops text labels on every pin including ground pins.  KiCad's
+SPICE exporter uses label-text > power-port-identity precedence, so a
+net with both gets named `"GND"` instead of mapped to SPICE node `0`.
+ngspice then has no ground reference, the current-probe wrapper turns
+the source into a near-short, and the sim aborts with a singular
+matrix at ~1e-19s.
+
+Three plausible fixes, ranked:
+
+1. **Per-pin power ports**: place a `power:GND` symbol AT each ground
+   pin instead of one symbol far away connected by labels.  Removes
+   the label/power-port conflict entirely.  Cost: more symbols on the
+   sheet; needs `_layout_positions` to be aware of which pins need
+   power-port stubs.
+2. **Skip labels on power/ground pins + route wires from each power
+   pin to the single power-port symbol**.  Cleaner sheet but requires
+   wire-routing (currently nonexistent — label-based connectivity is
+   the deliberate "don't route" choice).
+3. **Use the literal text `"0"` as the label for ground nets**.  May
+   not be a valid KiCad label name.  Untested.
+
+The bug shows up on the buck demo because the LED-oscillator demo's
+ground happened to be tested with a different code path (canonical
+deck via `load_netlist`, not `run_analysis(from_schematic=True)`) —
+the from-schematic run on LED osc that I logged earlier as "3612
+samples" must have happened *before* `to_kicad_sch` saved the labels
+to disk, while the in-memory schematic state was still being authored.
+
+## `export_sch_netlist` returns empty when not freshly-authored
+
+The `kicad_native_export_sch_netlist.run(...)` binding returns
+`{'ok': True, 'output_paths': [...]}` and writes a netlist file
+that contains only `.title KiCad schematic\n.end\n` when the project's
+schematic was loaded from disk in this KliCAD process rather than
+authored via the API mid-session.  Confirmed: a schematic file with
+22 placed symbols on disk produces an empty netlist via the API, but
+the same schematic exports correctly when the API authored it earlier
+in the same process.
+
+Likely cause: the export job consults the in-memory `SCHEMATIC` from
+the `SCH_EDIT_FRAME`, but the frame's load-from-disk path isn't fully
+done by the time `kiway->Player(FRAME_SCH, true)` returns inside
+`run_export_sch_netlist`.  Or the export job is reading
+`Schematic()->Items()` before the schematic IO is plumbed in.
+
+Workaround: keep the schematic editor on a fresh project that was
+authored via `to_kicad_sch()` in this same session.  Don't try to
+export a schematic that was only loaded.
+
 ## Open bugs (not crashes)
 
 ### IU scale fragility
