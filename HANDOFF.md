@@ -358,6 +358,58 @@ on branch `feature/klicad-bindings`.
    (hierarchical naming).  `get_vector('v(nl)')` won't match; use
    `get_vector('v(/nl)')`.
 
+### Roadmap beyond Phase B (D / E / F / G)
+
+The Mac session 3 working agreement: the canonical Python `Circuit` is
+now the source of truth, and we own how it derives `.kicad_sch`. That
+unlocks an auto-layout pipeline we couldn't approach when the .kicad_sch
+was an artifact users hand-edited. Phases:
+
+- **Phase C — incremental update** (`Circuit.from_kicad_sch()` +
+  `Circuit.diff()` + `CircuitDiff.apply()`). Preserves position data
+  across spec changes. Round-trip property test as oracle. Detailed
+  below.
+- **Phase D — hierarchical block decomposition.** Auto-detect natural
+  subcircuits in a netgraph; emit each as its own sheet with hierarchical
+  pins for the boundary nets. Algorithm: **Louvain community detection**
+  on the netgraph (parts = nodes, nets approximated as binary edges).
+  Threshold: pull out a block when `|external_nets| / |parts| < ~0.3`
+  AND size ≥ ~3. Power/ground treated as implicit (excluded from the
+  netgraph, available everywhere via labels) so they don't pull the
+  whole circuit into one giant module.
+
+  **TODO upgrade**: move from Louvain to **hypergraph partitioning**
+  (KaHyPar, hMETIS, PaToH) — circuit nets are hyperedges, not binary
+  edges, and real EDA tools use multilevel hypergraph partitioning for
+  this exact problem. Louvain is the pragmatic starting point; the
+  decision rule and threshold should port over.
+- **Phase E — Sugiyama placement per sheet.** Replaces the current
+  "horizontal row at y=ROW_Y" grid in `_kicad_sch.py`. Four passes:
+  cycle removal → layer assignment → crossing minimization → coord
+  assignment. Layers map naturally to signal-flow direction. Power
+  rails at the top of each sheet, ground at the bottom, signals flow
+  left-to-right.
+- **Phase F — A\* routing for explicit wires** (OPTIONAL). Label-based
+  wiring stays the default; this is opt-in via per-Circuit setting for
+  cases where the user wants visible signal-flow runs (`R1 → C1` next
+  to each other). A* on the Hanan grid with crossing penalty. Steiner
+  trees for multi-pin nets.
+- **Phase G — invariant-preserving transform system.** Once placement
+  is non-trivial, refactor tools (move-symbol, straighten-wire,
+  label↔wire conversion) need a correctness guard. Architecture: every
+  transform is `(Schematic, params) → Either[Schematic, RejectReason]`
+  that calls `from_kicad_sch()` before-and-after; rejects if the
+  canonical slice changes. Cheap (O(n) canonical extraction); strong
+  guarantee.
+
+**Concrete first step for Phase D**: implement `Circuit.partition() →
+list[Block]` on top of `networkx.algorithms.community.louvain_communities`
+or `python-igraph`'s equivalent. No schematic generation yet — just
+expose the decomposition so we can eyeball whether the heuristic picks
+sensible blocks for test designs (LED osc → 1 block; instrumentation
+amp → ~3; MCU board → 8+). Verify on real designs before wiring
+to_kicad_sch into the sheet-emit path.
+
 ### Phase C (NEXT — design sketched, not implemented)
 
 Single-source-of-truth pipeline now works, but `to_kicad_sch()` is
