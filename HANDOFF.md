@@ -1,14 +1,15 @@
 # KliCAD handoff — 2026-05-17
 
-You're picking up KliCAD development on Linux. This doc covers everything I
-think you need: project shape, current state, recent crashes (with full
-stack traces and the scripts that triggered them), conventions to keep, and
-a prioritized work queue.
+You're picking up KliCAD development. This doc covers project shape, current
+state, recent crashes (with full stack traces and repro scripts), conventions
+to keep, and a prioritized work queue.
 
-The previous developer (Mac) hit a fresh schematic-switch crash mid-demo
-and stopped before forcing through. Don't repeat that — read the "Open
-crashes" section before touching `open_schematic` or any project-switch
-code path.
+Mac dev session 2 added significant work that needs Linux validation —
+see the **"Canonical circuit description"** section below for the new
+`kipy.klicad.circuit` module. Phase A (Python DSL + SPICE deck + sim
+verification) is tested and green. Phase B (`.to_kicad_sch()` schematic
+generator) is preliminary — code is in but the Mac session was blocked
+by an UnsavedChangesDialog before the end-to-end test could run.
 
 ---
 
@@ -262,17 +263,102 @@ pybind11 ≥ 3.0 header-only; Python 3.13 dev headers.
 
 ## Suggested priority order
 
-1. **Investigate crash #2** (SCHEMATIC::SetProject) — figure out what
+1. **Validate Phase B of `kipy.klicad.circuit`** (see next section). Code
+   is in but live KliCAD round-trip wasn't tested on Mac (UnsavedChangesDialog
+   blocked the main thread mid-test). On Linux there's no Gatekeeper, and
+   you can scriptally dismiss-or-bypass dialogs more cleanly.
+2. **Investigate crash #2** (SCHEMATIC::SetProject) — figure out what
    `OpenProjectFiles` does to the old SCHEMATIC and where the freed
-   pointer comes from. This blocks programmatic project authoring.
-2. **Refactor IU scaling to use `schIUScale` / `pcbIUScale`** — kills the
-   class of bugs that just bit the previous dev. Includes fixing
-   `bindings_hierarchy.cpp:376`.
-3. **Add PCB authoring primitives**: `pcb_state.set_footprint_value`,
+   pointer comes from. Blocks programmatic project authoring; right now
+   the workaround is "launch KliCAD with the project on cmd line, don't
+   switch projects mid-session."
+3. **Refactor IU scaling to use `schIUScale` / `pcbIUScale`** — kills the
+   class of bugs that bit the previous dev. The Linux dev's commit
+   `f3558c5b8e` already addressed the worst case (schematic IU rounding
+   for net labels); `bindings_hierarchy.cpp:376` still has the wrong
+   divisor.
+4. **Add PCB authoring primitives**: `pcb_state.set_footprint_value`,
    `set_footprint_rotation`, `get_pad_position`. Modeled directly on the
-   new schematic_state primitives in commit `06ac615c21`.
-4. **Resume the LED-oscillator demo** (see "Demo in progress" below) on
-   a stable foundation.
+   schematic_state primitives in commit `06ac615c21`.
+
+## Canonical circuit description (`kipy.klicad.circuit`) — NEW
+
+Single-source-of-truth pipeline for circuits. A Python `Circuit` object
+describes the electrical reality (parts, nets, ICs, analyses); both the
+SPICE deck and the KiCad schematic derive from it. No more parallel
+hand-authored schematic + hand-authored deck that can drift.
+
+Lives in [klicad-python:kipy/klicad/circuit/](https://github.com/Barjak/klicad-python/tree/feature/klicad-bindings/kipy/klicad/circuit)
+on branch `feature/klicad-bindings`.
+
+### Phase A (DONE, 8/8 tests green, commit `96351de`)
+- `_part.py`: `Part` base + `R/C/L/D/LED/NPN/PNP/V/I` subclasses with
+  SPICE-semantic pin names (`c/b/e`, `a/k`, `+/-`).
+- `_analyses.py`: `Tran/Ac/Dc/Op/Noise` typed dataclasses + `Control`
+  escape hatch for raw .control bodies.
+- `_circuit.py`: `Circuit` container; validation at `.add()` time;
+  `to_dict()`/`from_dict()` for round-trip; auto-detect power/ground
+  nets by name.
+- `_spice.py`: `to_spice_deck()` — generates a complete ngspice deck.
+  Wraps analyses in `.control` block so they actually execute (raw
+  `.tran` is parse-time-only). Rewrites GND→0 at emit.
+- `models/standard.lib`: bundled starter library (2N3904, 2N3906,
+  BC547, BC557, 1N4148, 1N4001, LED, 2N7000, generic fallbacks).
+- `tests/test_circuit.py`: 8 tests covering build, validation, round-
+  trip, deck well-formedness, and live ngspice oscillation verification.
+
+### Phase B (PRELIMINARY — needs Linux validation)
+- `_kicad_sch.py`: `to_kicad_sch(path)` — uses the pybind primitives
+  (`add_symbol`, `set_symbol_value`, `set_symbol_field`,
+  `get_symbol_pin_position`, `add_label`) to author into KliCAD's live
+  schematic editor and save. Sets `Sim.Library` on each model-bearing
+  part so the GUI Play button regenerates a complete deck.
+- `examples/led_oscillator_canonical.py`: end-to-end demo replacing
+  the old `led_oscillator_demo.py`. Run with `--setup-only` to write
+  the project files, then launch KliCAD on the project, then re-run.
+
+**Known concerns Linux dev should verify:**
+
+1. Live round-trip not yet validated end-to-end. The Mac test was
+   blocked by an UnsavedChangesDialog when `_bootstrap_project_files`
+   touched a `.kicad_sch` KiCad had open. **Fix already applied in the
+   committed code** (only write the stub if the file doesn't exist;
+   never clobber a live file); needs verification.
+2. The `Sim.Library` field name is correct (`.` separator, not `_`) —
+   confirmed against upstream lib symbol files. The `Sim.Model`
+   override is set unconditionally for parts whose model name might
+   differ from the symbol's Value. Verify both translate to a working
+   `.include` in the GUI's generated netlist.
+3. Power symbol placement is best-effort and prints a warning on
+   failure (some power names may not have a matching `power:*` lib
+   symbol). Robustness can be improved.
+4. Layout is a simple horizontal row — fine for proof of concept,
+   ugly for real designs. Phase C is graph-aware placement.
+
+### Suggested validation flow on Linux
+```bash
+# Pull both repos to latest
+(cd kicad-build/kicad        && git pull origin feature/always-on-api-server)
+(cd kicad-build/kicad-python && git pull origin feature/klicad-bindings)
+
+# Phase A pure tests (no KiCad needed):
+cd kicad-build/kicad-python
+PYTHONPATH=. python -m pytest tests/test_circuit.py::test_build_circuit_no_errors \
+   tests/test_circuit.py::test_roundtrip_to_dict_from_dict \
+   tests/test_circuit.py::test_spice_deck_well_formed -v
+
+# Then with KliCAD running:
+kicad &
+PYTHONPATH=. python -m pytest tests/test_circuit.py -v
+
+# Phase B live round-trip:
+PYTHONPATH=. python examples/led_oscillator_canonical.py --setup-only
+kicad /tmp/klicad-led-osc-canonical/led-osc.kicad_pro &
+# wait for socket, then:
+PYTHONPATH=. python examples/led_oscillator_canonical.py
+# Then click PLAY in the simulator window — expect oscillation matching
+# the Python-side run.
+```
 
 ## Demo in progress
 
