@@ -448,20 +448,29 @@ size_t LIBRARY_MANAGER::CreateGlobalTableFromRoot( LIBRARY_TABLE_TYPE aType,
     // (e.g. <root>/kicad-footprints/Foo.pretty), and fall back to <root> itself.
     auto pickScanDir = [&]() -> wxString
     {
-        wxString subdir;
+        std::vector<wxString> subdirs;
         switch( aType )
         {
-        case LIBRARY_TABLE_TYPE::SYMBOL:       subdir = wxT( "kicad-symbols" );       break;
-        case LIBRARY_TABLE_TYPE::FOOTPRINT:    subdir = wxT( "kicad-footprints" );    break;
-        case LIBRARY_TABLE_TYPE::DESIGN_BLOCK: subdir = wxT( "kicad-design-blocks" ); break;
-        default:                               return aRootPath;
+        case LIBRARY_TABLE_TYPE::SYMBOL:
+            subdirs = { wxT( "kicad-symbols" ), wxT( "symbols" ) };
+            break;
+        case LIBRARY_TABLE_TYPE::FOOTPRINT:
+            subdirs = { wxT( "kicad-footprints" ), wxT( "footprints" ) };
+            break;
+        case LIBRARY_TABLE_TYPE::DESIGN_BLOCK:
+            subdirs = { wxT( "kicad-design-blocks" ), wxT( "design-blocks" ) };
+            break;
+        default:
+            return aRootPath;
         }
 
-        wxFileName probe( aRootPath, wxEmptyString );
-        probe.AppendDir( subdir );
-
-        if( wxDirExists( probe.GetPath() ) )
-            return probe.GetPath();
+        for( const wxString& subdir : subdirs )
+        {
+            wxFileName probe( aRootPath, wxEmptyString );
+            probe.AppendDir( subdir );
+            if( wxDirExists( probe.GetPath() ) )
+                return probe.GetPath();
+        }
 
         return aRootPath;
     };
