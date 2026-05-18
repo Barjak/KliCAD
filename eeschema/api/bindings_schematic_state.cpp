@@ -651,6 +651,36 @@ py::dict sch_state_get_symbol_pin_position( const std::string& kiid_str,
 
 
 // ──────────────────────────────────────────────────────────────────────────
+// get_symbol_bbox — return the body-only bounding box of a placed symbol
+// in world mm.  "Body-only" = excludes pin extents and text fields, so
+// the result is suitable as an obstacle rectangle for wire routing
+// (wires can legitimately approach via pin endpoints; the pin lines
+// themselves shouldn't count as keep-outs).
+// ──────────────────────────────────────────────────────────────────────────
+py::dict sch_state_get_symbol_bbox( const std::string& kiid_str )
+{
+    SCH_EDIT_FRAME* frame = require_sch_edit_frame();
+    SCHEMATIC&      sch   = frame->Schematic();
+
+    SCH_SYMBOL* sym = find_symbol_by_kiid( sch, wxString::FromUTF8( kiid_str.c_str() ) );
+
+    if( !sym )
+        throw std::runtime_error( "get_symbol_bbox: no symbol with kiid '" + kiid_str + "'" );
+
+    BOX2I box = sym->GetBodyBoundingBox();
+
+    py::dict d;
+    d[ "ok" ]      = true;
+    d[ "kiid" ]    = kiid_str;
+    d[ "x_mm" ]    = schIUScale.IUTomm( box.GetLeft() );
+    d[ "y_mm" ]    = schIUScale.IUTomm( box.GetTop() );
+    d[ "w_mm" ]    = schIUScale.IUTomm( box.GetWidth() );
+    d[ "h_mm" ]    = schIUScale.IUTomm( box.GetHeight() );
+    return d;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
 // get_sheet_count
 // ──────────────────────────────────────────────────────────────────────────
 int sch_state_get_sheet_count()
@@ -907,6 +937,20 @@ Returns on success:
 
 Returns on miss (does not raise):
     {ok: False, error, available_pins: [{number, name}, ...]}
+)DOC" );
+
+    m.def( "get_symbol_bbox", &sch_state_get_symbol_bbox,
+           py::arg( "kiid" ),
+           R"DOC(Return the body-only bounding box of a placed symbol in mm.
+
+The box excludes pin extents and text-field footprints, so it represents
+the obstacle a wire router should avoid passing THROUGH (wires can still
+approach via the pin endpoints, which lie at or just outside this box).
+
+The bbox respects the symbol's current rotation.
+
+Returns: {ok: True, kiid, x_mm, y_mm, w_mm, h_mm}
+         where (x_mm, y_mm) is the top-left corner.
 )DOC" );
 
     m.def( "open_schematic", &sch_state_open_schematic, py::arg( "path" ),
