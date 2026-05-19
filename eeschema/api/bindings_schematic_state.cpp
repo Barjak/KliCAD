@@ -842,8 +842,18 @@ Spawns the schematic editor if it isn't already open.
            py::arg( "x_mm" ), py::arg( "y_mm" ),
            R"DOC(Add a SCH_JUNCTION at (x_mm, y_mm).
 
-Returns {ok: bool, kiid: str, error?: str}.  Uses SCH_EDIT_FRAME::AddJunction
-under the hood for parity with the interactive tool.
+Returns {ok: bool, kiid: str, error?: str}.
+
+CAVEAT: KiCad's connection-graph cleanup runs at save time and silently
+DROPS junctions deemed "unneeded" — i.e. anywhere that doesn't actually
+have 3+ wire endpoints meeting, or doesn't have a wire passing over a
+pin mid-segment.  A router that depends on its junctions surviving must
+also ensure the local topology gives KiCad a reason to keep them.  In
+particular: two collinear wire segments meeting at a terminal pin are
+merged into one wire at save time, and ANY junction at the merge point
+disappears — losing the pin's connection.  Place a small lateral
+"kink" or split a routed wire at the pin so two non-collinear endpoints
+meet there before relying on add_junction.
 )DOC" );
 
     m.def( "add_label", &sch_state_add_label,
@@ -947,7 +957,10 @@ The box excludes pin extents and text-field footprints, so it represents
 the obstacle a wire router should avoid passing THROUGH (wires can still
 approach via the pin endpoints, which lie at or just outside this box).
 
-The bbox respects the symbol's current rotation.
+Rotation: GetBodyBoundingBox() walks the symbol's body geometry through
+SCH_SYMBOL::doGetBoundingBox which applies the placement orient/mirror
+transforms to each child item before computing the bound — so the
+returned axis-aligned box reflects the symbol's CURRENT orientation.
 
 Returns: {ok: True, kiid, x_mm, y_mm, w_mm, h_mm}
          where (x_mm, y_mm) is the top-left corner.
