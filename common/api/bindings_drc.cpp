@@ -30,6 +30,8 @@
 #include <wx/wfstream.h>
 #include <wx/window.h>
 
+#include <climits>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -65,6 +67,30 @@ std::string slurp_file( const wxString& aPath )
     std::stringstream ss;
     ss << f.rdbuf();
     return ss.str();
+}
+
+
+// Resolve a path to its canonical real form (follows symlinks).  KliCAD
+// targets macOS + Linux only, so POSIX realpath is fine.  Used to compare
+// the requested board path against the editor's loaded board without being
+// fooled by the macOS /tmp -> /private/tmp symlink (which would otherwise
+// make us re-open an identical board and trip the BOARD::ClearProject
+// same-path crash).
+wxString canonical_path( const wxString& aPath )
+{
+    if( aPath.IsEmpty() )
+        return wxEmptyString;
+
+    char resolved[PATH_MAX];
+
+    if( realpath( aPath.fn_str(), resolved ) )
+        return wxString::FromUTF8( resolved );
+
+    // realpath fails when the file doesn't exist — fall back to a plain
+    // absolute path so the comparison still does something sensible.
+    wxFileName fn( aPath );
+    fn.MakeAbsolute();
+    return fn.GetFullPath();
 }
 
 
@@ -105,11 +131,40 @@ py::object run_drc( const std::string& board_path,
         throw std::runtime_error( "no live KIWAY available — is KiCad's GUI running? "
                                   "(DRC needs the pcbnew kiface and project state to be loaded)" );
 
-    // PCBNEW_JOBS_HANDLER::getBoard requires an open PCB editor frame when
-    // running in GUI mode with a project loaded; otherwise it reports
-    // "Failed to load board".  Make sure the editor is up.  Player(..., true)
-    // creates the frame if missing.
-    kiway->Player( FRAME_PCB_EDITOR, true );
+    // PCBNEW_JOBS_HANDLER::getBoard, in GUI mode with a project open, returns
+    // editFrame->GetBoard() and IGNORES the job's m_filename.  So a DRC job
+    // nominally targeting `board_path` would actually run against whatever
+    // board the PCB editor currently holds — including the empty board of a
+    // freshly-spawned editor frame, which yields a bogus "no edges found on
+    // Edge.Cuts" / invalid_outline.  To make drc.run(board_path) honour its
+    // argument, load the requested board into the editor ourselves before
+    // dispatching the job.
+    KIWAY_PLAYER* pcbFrame = kiway->Player( FRAME_PCB_EDITOR, true );
+
+    if( !pcbFrame )
+    {
+        throw std::runtime_error(
+            "DRC: could not obtain the PCB editor frame "
+            "(KIWAY::Player(FRAME_PCB_EDITOR) returned null)" );
+    }
+
+    // Only (re)load when the editor isn't already showing the requested
+    // board.  Re-opening the identical path would hit the BOARD::ClearProject
+    // same-path crash — see the matching guard in pcb_state.open_board.
+    // canonical_path() resolves symlinks so /tmp vs /private/tmp doesn't
+    // fool us into a needless (and crash-prone) reload.
+    const wxString wantedBoard = canonical_path( wxString::FromUTF8( board_path ) );
+    const wxString loadedBoard = canonical_path( pcbFrame->GetCurrentFileName() );
+
+    if( wantedBoard != loadedBoard )
+    {
+        if( !pcbFrame->OpenProjectFiles( { wxString::FromUTF8( board_path ) }, 0 ) )
+        {
+            throw std::runtime_error(
+                "DRC: failed to load board '" + board_path + "' into the PCB "
+                "editor (KIWAY_PLAYER::OpenProjectFiles returned false)" );
+        }
+    }
 
     // Temp file for the JSON report — DRC writes to disk and we slurp it back.
     wxFileName tmpFile;
@@ -184,7 +239,15 @@ PYBIND11_EMBEDDED_MODULE( kicad_native_drc, m )
            py::arg( "all_track_errors" )  = false,
            py::arg( "schematic_parity" )  = false,
            py::arg( "refill_zones" )      = false,
-           R"DOC(Run DRC on the given .kicad_pcb file.
+           R"DOC(Run DRC on the .kicad_pcb file at board_path.
+
+board_path is honoured: the binding loads that board into the PCB editor
+before dispatching the job.  This is necessary because PCBNEW_JOBS_HANDLER::
+getBoard() ignores the job's m_filename in GUI mode and uses whatever board
+the editor currently holds — so without the explicit load, drc.run() would
+silently check the wrong board (or an empty one, yielding a spurious
+invalid_outline).  If the editor already shows board_path, no reload happens
+(re-opening the same path would trip the BOARD::ClearProject same-path crash).
 
 Returns a dict with keys:
   - ok           bool       True iff job exited cleanly (NOT iff zero violations)
@@ -198,6 +261,7 @@ Returns a dict with keys:
 severity: 'error' | 'warning' (default; includes errors) | 'all'
 units:    'mm' (default) | 'in' | 'mils'
 
-Raises RuntimeError if no live KIWAY is available (KiCad GUI not running).
+Raises RuntimeError if no live KIWAY is available (KiCad GUI not running),
+or if board_path can't be loaded into the PCB editor.
 )DOC" );
 }
