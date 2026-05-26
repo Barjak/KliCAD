@@ -817,6 +817,210 @@ py::dict sch_state_get_items_summary()
     return d;
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// list_symbols — enumerate placed symbols (for diff/apply idempotency)
+// ──────────────────────────────────────────────────────────────────────────
+py::list sch_state_list_symbols()
+{
+    SCH_EDIT_FRAME* frame = require_sch_edit_frame();
+    SCHEMATIC&      sch   = frame->Schematic();
+    py::list        out;
+
+    if( !sch.IsValid() )
+        return out;
+
+    for( const SCH_SHEET_PATH& path : sch.Hierarchy() )
+    {
+        SCH_SCREEN* screen = path.LastScreen();
+
+        if( !screen )
+            continue;
+
+        for( SCH_ITEM* item : screen->Items() )
+        {
+            if( item->Type() != SCH_SYMBOL_T )
+                continue;
+
+            SCH_SYMBOL* sym = static_cast<SCH_SYMBOL*>( item );
+            VECTOR2I    pos = sym->GetPosition();
+            int         orient = sym->GetOrientation();
+            py::dict    d;
+            d[ "kiid" ]        = sym->m_Uuid.AsStdString();
+            d[ "ref" ]         = std::string( sym->GetRef( &path ).utf8_string() );
+            d[ "lib_id" ]      = std::string( sym->GetLibId().Format().wx_str().utf8_string() );
+            d[ "x_mm" ]        = schIUScale.IUTomm( pos.x );
+            d[ "y_mm" ]        = schIUScale.IUTomm( pos.y );
+            d[ "orientation" ] = orient;
+            d[ "mirror_x" ]    = static_cast<bool>( orient & SYMBOL_ORIENTATION_T::SYM_MIRROR_X );
+            d[ "mirror_y" ]    = static_cast<bool>( orient & SYMBOL_ORIENTATION_T::SYM_MIRROR_Y );
+
+            // Value + Footprint as their own keys (mandatory fields).
+            const SCH_FIELD* valueF     = sym->GetField( FIELD_T::VALUE );
+            const SCH_FIELD* footprintF = sym->GetField( FIELD_T::FOOTPRINT );
+            d[ "value" ]     = valueF
+                                   ? std::string( valueF->GetText().utf8_string() )
+                                   : std::string();
+            d[ "footprint" ] = footprintF
+                                   ? std::string( footprintF->GetText().utf8_string() )
+                                   : std::string();
+
+            // Every field — mandatory + user — keyed by field name.  Sim.*
+            // fields and any custom user fields land here so diff/apply
+            // tests can verify they're preserved (or updated) as expected.
+            py::dict fields;
+            for( const SCH_FIELD& f : sym->GetFields() )
+            {
+                fields[ py::str( std::string( f.GetName().utf8_string() ) ) ]
+                    = std::string( f.GetText().utf8_string() );
+            }
+            d[ "fields" ] = fields;
+
+            out.append( d );
+        }
+    }
+
+    return out;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
+// delete_by_kiid — remove a single SCH_ITEM by its UUID
+// ──────────────────────────────────────────────────────────────────────────
+py::dict sch_state_delete_by_kiid( const std::string& kiid_str )
+{
+    SCH_EDIT_FRAME* frame  = require_sch_edit_frame();
+    SCHEMATIC&      sch    = frame->Schematic();
+    KIID            target( wxString::FromUTF8( kiid_str.c_str() ) );
+    SCH_ITEM*       found        = nullptr;
+    SCH_SCREEN*     found_screen = nullptr;
+
+    if( sch.IsValid() )
+    {
+        for( const SCH_SHEET_PATH& path : sch.Hierarchy() )
+        {
+            SCH_SCREEN* screen = path.LastScreen();
+
+            if( !screen )
+                continue;
+
+            for( SCH_ITEM* item : screen->Items() )
+            {
+                if( item->m_Uuid == target )
+                {
+                    found        = item;
+                    found_screen = screen;
+                    break;
+                }
+            }
+
+            if( found )
+                break;
+        }
+    }
+
+    py::dict result;
+
+    if( !found )
+    {
+        result[ "ok" ]    = false;
+        result[ "error" ] = std::string( "no item with kiid " ) + kiid_str;
+        return result;
+    }
+
+    {
+        SCH_COMMIT commit( frame );
+        commit.Removed( found, found_screen );
+        frame->RemoveFromScreen( found, found_screen );
+        commit.Push( wxT( "KliCAD: delete_by_kiid" ) );
+    }
+
+    refresh_sch_canvas( frame );
+
+    result[ "ok" ]   = true;
+    result[ "kiid" ] = kiid_str;
+    return result;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
+// clear_routing — bulk-delete wires + labels + junctions + power-flag symbols
+// (preserves real component symbols).
+//
+// Used by to_schematic(mode="diff") between iterations: real component
+// symbols + their positions/rotations/custom fields survive, but every
+// wire / label / junction / power-flag (#PWR_* refs) is removed so the
+// router + power placement can re-emit them clean against the current
+// Circuit topology — no accumulation across runs.
+// ──────────────────────────────────────────────────────────────────────────
+py::dict sch_state_clear_routing()
+{
+    SCH_EDIT_FRAME* frame = require_sch_edit_frame();
+    SCHEMATIC&      sch   = frame->Schematic();
+    int             n     = 0;
+
+    if( sch.IsValid() )
+    {
+        for( const SCH_SHEET_PATH& path : sch.Hierarchy() )
+        {
+            SCH_SCREEN* screen = path.LastScreen();
+
+            if( !screen )
+                continue;
+
+            std::vector<SCH_ITEM*> to_remove;
+
+            for( SCH_ITEM* item : screen->Items() )
+            {
+                KICAD_T t = item->Type();
+
+                if( t == SCH_JUNCTION_T || t == SCH_LABEL_T
+                    || t == SCH_GLOBAL_LABEL_T || t == SCH_HIER_LABEL_T )
+                {
+                    to_remove.push_back( item );
+                }
+                else if( t == SCH_LINE_T && item->GetLayer() == LAYER_WIRE )
+                {
+                    to_remove.push_back( item );
+                }
+                else if( t == SCH_SYMBOL_T )
+                {
+                    // Power-flag symbols use refs prefixed with '#' — the
+                    // KiCad convention for non-netlist refs.  They're
+                    // routing decoration (one per net), not parts, and
+                    // get re-emitted every pass by _place_power_symbols.
+                    SCH_SYMBOL* sym = static_cast<SCH_SYMBOL*>( item );
+                    wxString    ref = sym->GetRef( &path );
+
+                    if( !ref.IsEmpty() && ref[0] == wxT( '#' ) )
+                        to_remove.push_back( item );
+                }
+            }
+
+            if( to_remove.empty() )
+                continue;
+
+            SCH_COMMIT commit( frame );
+
+            for( SCH_ITEM* item : to_remove )
+            {
+                commit.Removed( item, screen );
+                frame->RemoveFromScreen( item, screen );
+                ++n;
+            }
+
+            commit.Push( wxT( "KliCAD: clear_routing" ) );
+        }
+    }
+
+    refresh_sch_canvas( frame );
+
+    py::dict d;
+    d[ "ok" ]      = true;
+    d[ "removed" ] = n;
+    return d;
+}
+
+
 } // anon
 
 
@@ -1004,5 +1208,29 @@ Raises:
 
 Keys: symbols, wires (SCH_LINE on LAYER_WIRE), lines (all SCH_LINEs),
 junctions, labels (local), glabels, hlabels, sheets, sheet_count.
+)DOC" );
+
+    m.def( "list_symbols", &sch_state_list_symbols,
+           R"DOC(Enumerate placed symbols across every sheet in the hierarchy.
+
+Returns a list of dicts: [{kiid, ref, lib_id, x_mm, y_mm}, ...].  Used by
+klicad-python's to_schematic(mode='diff') to map existing refs to kiids
+so re-runs can skip re-placing unchanged parts (preserving position) and
+target removed refs for deletion.
+)DOC" );
+
+    m.def( "delete_by_kiid", &sch_state_delete_by_kiid, py::arg( "kiid" ),
+           R"DOC(Remove a single SCH_ITEM (symbol, wire, label, junction) by UUID.
+
+Returns {ok: bool, kiid: str} on success, {ok: False, error: str} if no
+item matches.  Wrapped in an SCH_COMMIT so the deletion is undoable.
+)DOC" );
+
+    m.def( "clear_routing", &sch_state_clear_routing,
+           R"DOC(Bulk-delete every wire, label, and junction; preserve symbols.
+
+Used between iterations of a diff/apply schematic build so the router can
+re-emit clean routing without disturbing manually-positioned symbols.
+Returns {ok: True, removed: int}.
 )DOC" );
 }

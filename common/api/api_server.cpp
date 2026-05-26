@@ -87,7 +87,7 @@ void KICAD_API_SERVER::Start()
 #else
         socket.AssignDir( wxStandardPaths::Get().GetTempDir() );
 #endif
-        socket.AppendDir( wxS( "kicad" ) );
+        socket.AppendDir( wxS( "klicad" ) );
         socket.SetFullName( wxS( "api.sock" ) );
     }
     else
