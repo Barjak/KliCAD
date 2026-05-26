@@ -37,6 +37,10 @@
 #include <sim/spice_simulator.h>
 #include <sim/sim_types.h>
 #include <sim/spice_value.h>
+#include <sim/sim_library.h>
+#include <sim/sim_library_spice.h>
+#include <sim/sim_model.h>
+#include <reporter.h>
 #include <tuner_slider.h>
 
 #include <wx/filename.h>
@@ -675,7 +679,75 @@ py::object sim_adv_get_simulation_parameter( const std::string& aName )
     return std::move( result );
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// parse_subckt_lib — parse a SPICE .lib file via KiCad's SIM_LIBRARY_SPICE
+// + SPICE_LIBRARY_PARSER and return {name: {pin_count, pin_names}}.
+// ──────────────────────────────────────────────────────────────────────────
+py::dict sim_adv_parse_subckt_lib( const std::string& aPath )
+{
+    py::dict result;
+    result[ "path" ] = aPath;
+
+    wxString path = wxString::FromUTF8( aPath.c_str() );
+
+    if( !wxFileName::Exists( path ) )
+    {
+        result[ "ok" ]       = false;
+        result[ "models" ]   = py::dict();
+        result[ "messages" ] = py::list();
+        result[ "error" ]    = std::string( "file not found" );
+        return result;
+    }
+
+    WX_STRING_REPORTER reporter;
+    SIM_LIBRARY_SPICE  library( /*aForceFullParse*/ true );
+
+    bool ok = true;
+    try
+    {
+        library.ReadFile( path, reporter );
+    }
+    catch( const std::exception& e )
+    {
+        ok = false;
+        result[ "error" ] = std::string( e.what() );
+    }
+
+    py::dict models;
+    for( const SIM_LIBRARY::MODEL& mdl : library.GetModels() )
+    {
+        py::dict model_info;
+        model_info[ "pin_count" ] = mdl.model.GetPinCount();
+
+        py::list pin_names;
+        for( const std::string& pn : mdl.model.GetPinNames() )
+            pin_names.append( pn );
+
+        model_info[ "pin_names" ] = pin_names;
+        models[ py::str( mdl.name ) ] = model_info;
+    }
+
+    py::list messages;
+    if( reporter.HasMessage() )
+    {
+        wxString text = reporter.GetMessages();
+        wxArrayString lines = wxSplit( text, '\n' );
+        for( const wxString& line : lines )
+        {
+            if( !line.IsEmpty() )
+                messages.append( std::string( line.ToUTF8() ) );
+        }
+    }
+
+    result[ "ok" ] = ok && !reporter.HasMessageOfSeverity( RPT_SEVERITY_ERROR );
+    result[ "models" ]   = models;
+    result[ "messages" ] = messages;
+    return result;
+}
+
+
 } // anon
+
 
 void klicad_register_sim_advanced_bindings( py::module_& m )
 {
@@ -741,4 +813,11 @@ void klicad_register_sim_advanced_bindings( py::module_& m )
            "Read back a parameter previously set via set_simulation_parameter. "
            "Returns None for parameters never set here (ngspice's `print` output "
            "isn't captureable today)." );
+
+    m.def( "parse_subckt_lib", &sim_adv_parse_subckt_lib, py::arg( "path" ),
+           "Parse a SPICE .lib file via SIM_LIBRARY_SPICE + SPICE_LIBRARY_PARSER. "
+           "Returns {ok, path, models: {name: {pin_count, pin_names: [...]}, ...}, "
+           "messages: [...], error?: str}.  Authoritative source for .SUBCKT "
+           "arity + pin names — Python clients should NOT reimplement this "
+           "parsing locally (see klicad-python/CONTRIBUTING.md)." );
 }

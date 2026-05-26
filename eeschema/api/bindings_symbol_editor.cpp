@@ -237,6 +237,41 @@ py::dict make_symbol_info_dict( LIB_SYMBOL* aSymbol, const wxString& aLibrary,
     d[ "description" ]  = std::string( aSymbol->GetDescription().ToUTF8() );
     d[ "keywords" ]     = std::string( aSymbol->GetKeyWords().ToUTF8() );
 
+    // Sim.* fields — the canonical place a symbol records its SPICE binding.
+    // Absent fields appear as empty strings.  Lets clients see whether a
+    // KiCad symbol is already mapped to a SPICE model and pull the existing
+    // pin map / model name out, instead of inferring them from the .lib.
+    py::dict sim_fields;
+    auto read_field = [aSymbol]( const wxString& name ) -> std::string
+    {
+        const SCH_FIELD* f = aSymbol->GetField( name );
+        return f ? std::string( f->GetText().ToUTF8() ) : std::string();
+    };
+    sim_fields[ "name" ]    = read_field( wxT( "Sim.Name" ) );
+    sim_fields[ "type" ]    = read_field( wxT( "Sim.Type" ) );
+    sim_fields[ "pins" ]    = read_field( wxT( "Sim.Pins" ) );
+    sim_fields[ "library" ] = read_field( wxT( "Sim.Library" ) );
+    sim_fields[ "params" ]  = read_field( wxT( "Sim.Params" ) );
+
+    // Anything else under Sim.* (Sim.Params.<param> overrides, etc.)
+    py::dict sim_extra;
+    std::vector<SCH_FIELD*> all_fields;
+    aSymbol->GetFields( all_fields, /*aVisibleOnly*/ false );
+    for( SCH_FIELD* f : all_fields )
+    {
+        wxString fname = f->GetName();
+        if( !fname.StartsWith( wxT( "Sim." ) ) )
+            continue;
+        if( fname == wxT( "Sim.Name" )    || fname == wxT( "Sim.Type" )
+         || fname == wxT( "Sim.Pins" )    || fname == wxT( "Sim.Library" )
+         || fname == wxT( "Sim.Params" ) )
+            continue;
+        sim_extra[ py::str( std::string( fname.ToUTF8() ) ) ] =
+            std::string( f->GetText().ToUTF8() );
+    }
+    sim_fields[ "extra" ] = sim_extra;
+    d[ "sim_fields" ] = sim_fields;
+
     return d;
 }
 
