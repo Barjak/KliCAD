@@ -41,6 +41,9 @@
 #include <schematic.h>
 #include <sch_screen.h>
 #include <sch_symbol.h>
+#include <sch_sheet.h>
+#include <sch_sheet_pin.h>
+#include <sch_sheet_path.h>
 #include <sch_line.h>
 #include <sch_label.h>
 #include <sch_junction.h>
@@ -820,7 +823,7 @@ py::dict sch_state_get_items_summary()
 // ──────────────────────────────────────────────────────────────────────────
 // list_symbols — enumerate placed symbols (for diff/apply idempotency)
 // ──────────────────────────────────────────────────────────────────────────
-py::list sch_state_list_symbols()
+py::list sch_state_list_symbols( const std::string& sheet_path = std::string() )
 {
     SCH_EDIT_FRAME* frame = require_sch_edit_frame();
     SCHEMATIC&      sch   = frame->Schematic();
@@ -831,6 +834,12 @@ py::list sch_state_list_symbols()
 
     for( const SCH_SHEET_PATH& path : sch.Hierarchy() )
     {
+        // Per-sheet scoping: when sheet_path is non-empty, only return
+        // rows for items on that exact path.  "" = whole hierarchy.
+        std::string this_path = std::string( path.Path().AsString().utf8_str() );
+        if( !sheet_path.empty() && this_path != sheet_path )
+            continue;
+
         SCH_SCREEN* screen = path.LastScreen();
 
         if( !screen )
@@ -848,6 +857,7 @@ py::list sch_state_list_symbols()
             d[ "kiid" ]        = sym->m_Uuid.AsStdString();
             d[ "ref" ]         = std::string( sym->GetRef( &path ).utf8_string() );
             d[ "lib_id" ]      = std::string( sym->GetLibId().Format().wx_str().utf8_string() );
+            d[ "sheet_path" ]  = this_path;
             d[ "x_mm" ]        = schIUScale.IUTomm( pos.x );
             d[ "y_mm" ]        = schIUScale.IUTomm( pos.y );
             d[ "orientation" ] = orient;
@@ -952,7 +962,7 @@ py::dict sch_state_delete_by_kiid( const std::string& kiid_str )
 // router + power placement can re-emit them clean against the current
 // Circuit topology — no accumulation across runs.
 // ──────────────────────────────────────────────────────────────────────────
-py::dict sch_state_clear_routing()
+py::dict sch_state_clear_routing( const std::string& sheet_path = std::string() )
 {
     SCH_EDIT_FRAME* frame = require_sch_edit_frame();
     SCHEMATIC&      sch   = frame->Schematic();
@@ -962,6 +972,10 @@ py::dict sch_state_clear_routing()
     {
         for( const SCH_SHEET_PATH& path : sch.Hierarchy() )
         {
+            std::string this_path = std::string( path.Path().AsString().utf8_str() );
+            if( !sheet_path.empty() && this_path != sheet_path )
+                continue;
+
             SCH_SCREEN* screen = path.LastScreen();
 
             if( !screen )
@@ -1018,6 +1032,178 @@ py::dict sch_state_clear_routing()
     d[ "ok" ]      = true;
     d[ "removed" ] = n;
     return d;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
+// add_sheet — place a SCH_SHEET on the current sheet (used by H2 hierarchy).
+//
+// Creates a fresh empty SCH_SCREEN for the new sheet so subsequent
+// set_current_sheet + add_symbol calls have somewhere to land.  The
+// Python side is expected to have already laid down the corresponding
+// child .kicad_sch stub on disk; save_schematic will overwrite it
+// with the in-memory SCH_SCREEN's content.
+// ──────────────────────────────────────────────────────────────────────────
+py::object sch_state_add_sheet(
+        const std::string& name,
+        const std::string& filename,
+        double x_mm, double y_mm,
+        double w_mm, double h_mm )
+{
+    SCH_EDIT_FRAME* frame         = require_sch_edit_frame();
+    SCHEMATIC&      sch           = frame->Schematic();
+    SCH_SCREEN*     parent_screen = frame->GetScreen();
+
+    if( !parent_screen )
+        throw std::runtime_error( "add_sheet: SCH_EDIT_FRAME has no active screen" );
+
+    VECTOR2I pos = mm_to_iu( x_mm, y_mm );
+    VECTOR2I size( schIUScale.mmToIU( w_mm ), schIUScale.mmToIU( h_mm ) );
+
+    SCH_SHEET* sheet = new SCH_SHEET( &frame->Schematic(), pos );
+    sheet->SetSize( size );
+    sheet->SetName( wxString::FromUTF8( name.c_str() ) );
+    wxString fn = wxString::FromUTF8( filename.c_str() );
+    sheet->SetFileName( fn );
+
+    // Screen-sharing for multi-instance Sub-Circuits: if another SCH_SHEET
+    // in the hierarchy already points at the same .kicad_sch filename,
+    // share its SCH_SCREEN.  Edits to body content show up in every
+    // instance.  This is KiCad's "complex hierarchy" semantic; the
+    // alternative (each instance gets its own SCH_SCREEN) would race the
+    // single backing file on save.
+    SCH_SCREEN* shared_screen = nullptr;
+    for( const SCH_SHEET_PATH& other_path : sch.Hierarchy() )
+    {
+        SCH_SCREEN* sc = other_path.LastScreen();
+        if( !sc )
+            continue;
+        for( SCH_ITEM* item : sc->Items().OfType( SCH_SHEET_T ) )
+        {
+            SCH_SHEET* other = static_cast<SCH_SHEET*>( item );
+            if( other->GetFileName() == fn )
+            {
+                shared_screen = other->GetScreen();
+                break;
+            }
+        }
+        if( shared_screen )
+            break;
+    }
+    sheet->SetScreen( shared_screen
+                          ? shared_screen
+                          : new SCH_SCREEN( &frame->Schematic() ) );
+
+    {
+        SCH_COMMIT commit( frame );
+        frame->AddToScreen( sheet, parent_screen );
+        commit.Added( sheet, parent_screen );
+        commit.Push( wxT( "KliCAD: add_sheet" ) );
+    }
+
+    refresh_sch_canvas( frame );
+
+    py::dict result;
+    result[ "ok" ]        = true;
+    result[ "kiid" ]      = sheet->m_Uuid.AsStdString();
+    result[ "name" ]      = name;
+    result[ "file_name" ] = filename;
+    return result;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
+// add_sheet_pin — add a SCH_SHEET_PIN to an existing SCH_SHEET by uuid.
+//
+// `side` ∈ {"left","right","top","bottom"}.
+// `shape` ∈ {"input","output","bidi"/"bidirectional","tristate"/"tri_state",
+//            "passive"/"unspecified"}.  KliCAD treats all shapes equivalently
+// in the netlist; the shape affects only the rendering glyph.
+// ──────────────────────────────────────────────────────────────────────────
+py::object sch_state_add_sheet_pin(
+        const std::string& sheet_kiid_str,
+        const std::string& name,
+        const std::string& side,
+        double x_mm, double y_mm,
+        const std::string& shape = std::string( "bidi" ) )
+{
+    SCH_EDIT_FRAME* frame  = require_sch_edit_frame();
+    SCHEMATIC&      sch    = frame->Schematic();
+    KIID            target( wxString::FromUTF8( sheet_kiid_str.c_str() ) );
+
+    SCH_SHEET*  parent_sheet  = nullptr;
+    SCH_SCREEN* parent_screen = nullptr;
+
+    for( const SCH_SHEET_PATH& path : sch.Hierarchy() )
+    {
+        SCH_SCREEN* screen = path.LastScreen();
+        if( !screen )
+            continue;
+        for( SCH_ITEM* item : screen->Items().OfType( SCH_SHEET_T ) )
+        {
+            if( item->m_Uuid == target )
+            {
+                parent_sheet  = static_cast<SCH_SHEET*>( item );
+                parent_screen = screen;
+                break;
+            }
+        }
+        if( parent_sheet )
+            break;
+    }
+
+    if( !parent_sheet )
+        throw std::runtime_error(
+            std::string( "add_sheet_pin: no SCH_SHEET with uuid '" )
+            + sheet_kiid_str + "'" );
+
+    SHEET_SIDE side_enum;
+    if( side == "left" )        side_enum = SHEET_SIDE::LEFT;
+    else if( side == "right" )  side_enum = SHEET_SIDE::RIGHT;
+    else if( side == "top" )    side_enum = SHEET_SIDE::TOP;
+    else if( side == "bottom" ) side_enum = SHEET_SIDE::BOTTOM;
+    else
+        throw std::invalid_argument(
+            "add_sheet_pin: side must be one of 'left'/'right'/'top'/'bottom' "
+            "(got '" + side + "')" );
+
+    LABEL_FLAG_SHAPE shape_enum;
+    if( shape == "input" )
+        shape_enum = LABEL_FLAG_SHAPE::L_INPUT;
+    else if( shape == "output" )
+        shape_enum = LABEL_FLAG_SHAPE::L_OUTPUT;
+    else if( shape == "bidi" || shape == "bidirectional" )
+        shape_enum = LABEL_FLAG_SHAPE::L_BIDI;
+    else if( shape == "tristate" || shape == "tri_state" )
+        shape_enum = LABEL_FLAG_SHAPE::L_TRISTATE;
+    else if( shape == "passive" || shape == "unspecified" )
+        shape_enum = LABEL_FLAG_SHAPE::L_UNSPECIFIED;
+    else
+        throw std::invalid_argument(
+            "add_sheet_pin: shape must be one of 'input'/'output'/'bidi'/"
+            "'tristate'/'passive' (got '" + shape + "')" );
+
+    VECTOR2I pos = mm_to_iu( x_mm, y_mm );
+
+    SCH_SHEET_PIN* pin = new SCH_SHEET_PIN( parent_sheet, pos,
+                                            wxString::FromUTF8( name.c_str() ) );
+    pin->SetSide( side_enum );
+    pin->SetShape( shape_enum );
+
+    {
+        SCH_COMMIT commit( frame );
+        commit.Modify( parent_sheet, parent_screen );
+        parent_sheet->AddPin( pin );
+        commit.Push( wxT( "KliCAD: add_sheet_pin" ) );
+    }
+
+    refresh_sch_canvas( frame );
+
+    py::dict result;
+    result[ "ok" ]   = true;
+    result[ "kiid" ] = pin->m_Uuid.AsStdString();
+    result[ "name" ] = name;
+    return result;
 }
 
 
@@ -1211,26 +1397,69 @@ junctions, labels (local), glabels, hlabels, sheets, sheet_count.
 )DOC" );
 
     m.def( "list_symbols", &sch_state_list_symbols,
-           R"DOC(Enumerate placed symbols across every sheet in the hierarchy.
+           py::arg( "sheet_path" ) = std::string(),
+           R"DOC(Enumerate placed symbols.
 
-Returns a list of dicts: [{kiid, ref, lib_id, x_mm, y_mm}, ...].  Used by
-klicad-python's to_schematic(mode='diff') to map existing refs to kiids
-so re-runs can skip re-placing unchanged parts (preserving position) and
-target removed refs for deletion.
+sheet_path: "" = walk whole hierarchy (default); "/uuid1/uuid2" = scope
+to a single sheet path (as returned by klicad_native_hierarchy.list_sheets
+or get_current_sheet's path_string).
+
+Each row carries: kiid, ref, lib_id, sheet_path, x_mm, y_mm, orientation,
+mirror_x, mirror_y, value, footprint, fields (dict of name->text).
+
+Used by klicad-python's to_schematic(mode='diff') to compute the
+add/remove/keep ref-set and verify field state per sheet.
 )DOC" );
 
     m.def( "delete_by_kiid", &sch_state_delete_by_kiid, py::arg( "kiid" ),
-           R"DOC(Remove a single SCH_ITEM (symbol, wire, label, junction) by UUID.
+           R"DOC(Remove a single SCH_ITEM (symbol, wire, label, junction, sheet,
+sheet-pin) by UUID.
 
 Returns {ok: bool, kiid: str} on success, {ok: False, error: str} if no
 item matches.  Wrapped in an SCH_COMMIT so the deletion is undoable.
 )DOC" );
 
     m.def( "clear_routing", &sch_state_clear_routing,
-           R"DOC(Bulk-delete every wire, label, and junction; preserve symbols.
+           py::arg( "sheet_path" ) = std::string(),
+           R"DOC(Bulk-delete every wire, label, junction, and #PWR_* power-flag
+symbol; preserve real component symbols.
 
-Used between iterations of a diff/apply schematic build so the router can
-re-emit clean routing without disturbing manually-positioned symbols.
+sheet_path: "" = walk whole hierarchy (default); "/uuid" = scope to one
+sheet.  Used between diff iterations so the router and power-symbol
+placement re-emit clean each pass without #PWR accumulation.
+
 Returns {ok: True, removed: int}.
+)DOC" );
+
+    m.def( "add_sheet", &sch_state_add_sheet,
+           py::arg( "name" ), py::arg( "filename" ),
+           py::arg( "x_mm" ), py::arg( "y_mm" ),
+           py::arg( "w_mm" ), py::arg( "h_mm" ),
+           R"DOC(Place a SCH_SHEET on the current sheet.
+
+A fresh empty SCH_SCREEN is created and attached so subsequent
+set_current_sheet + add_symbol calls populate the child sheet's
+content.  The Python side is responsible for laying down the
+corresponding child .kicad_sch stub on disk; save_schematic
+overwrites it with the in-memory screen.
+
+Returns {ok, kiid, name, file_name}.
+)DOC" );
+
+    m.def( "add_sheet_pin", &sch_state_add_sheet_pin,
+           py::arg( "sheet_kiid" ), py::arg( "name" ),
+           py::arg( "side" ),
+           py::arg( "x_mm" ), py::arg( "y_mm" ),
+           py::arg( "shape" ) = std::string( "bidi" ),
+           R"DOC(Add a SCH_SHEET_PIN to an existing SCH_SHEET (by uuid).
+
+side  ∈ {'left','right','top','bottom'}.
+shape ∈ {'input','output','bidi'/'bidirectional','tristate'/'tri_state',
+         'passive'/'unspecified'}.
+
+Bus-syntax names like 'DATA[0..7]' are accepted verbatim — KliCAD's
+label/bus parser detects them automatically and renders as a bus pin.
+
+Returns {ok, kiid, name}.
 )DOC" );
 }
