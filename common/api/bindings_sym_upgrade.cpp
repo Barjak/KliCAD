@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: symbol-library file-format upgrade.
  *
  * Exposes the symbol-library upgrade-to-current-format operation as
- *   kicad_native_sym_upgrade.run(library_path, ...) -> dict
+ *   klicad_native_sym_upgrade.run(library_path, ...) -> dict
  *
  * Mirrors `kicad-cli sym upgrade` (see kicad/cli/command_sym_upgrade.cpp) and
  * the schematic-side symmetric binding in bindings_sch_upgrade.cpp.  Wraps
@@ -129,7 +129,7 @@ py::object run_sym_upgrade( const std::string& library_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_sym_upgrade, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_sym_upgrade, m )
 {
     m.doc() = "KliCAD symbol-library file-format upgrade binding (calls "
               "JOB_SYM_UPGRADE under the hood via the eeschema kiface). "

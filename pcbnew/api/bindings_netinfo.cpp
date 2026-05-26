@@ -1,7 +1,7 @@
 /*
  * KliCAD subsystem binding: BOARD net inspection / analysis.
  *
- * Exposes read-only net + netclass queries as kicad_native_netinfo.* for
+ * Exposes read-only net + netclass queries as klicad_native_netinfo.* for
  * design checks (impedance, length matching, fanout) that need the live
  * wiring topology of the open board.
  *

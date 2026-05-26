@@ -3,7 +3,7 @@
  *
  * Exposes JOB_EXPORT_SCH_NETLIST (KiCad sexpr / XML / OrcadPCB2 / CadStar /
  * PADS / Spice / Spice model / Allegro) as
- * kicad_native_export_sch_netlist.run(schematic_path, output, format, ...).
+ * klicad_native_export_sch_netlist.run(schematic_path, output, format, ...).
  *
  * Mirrors bindings_export_sch_plot.cpp (schematic-side, multi-format
  * string-to-enum) and bindings_erc.cpp (schematic-side FACE_SCH dispatch);
@@ -156,7 +156,7 @@ py::object run_export_sch_netlist( const std::string& schematic_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_export_sch_netlist, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_export_sch_netlist, m )
 {
     m.doc() = "KliCAD schematic netlist export binding (calls JOB_EXPORT_SCH_NETLIST "
               "under the hood). Returns a structured dict; never streams. "

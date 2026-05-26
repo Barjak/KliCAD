@@ -6,7 +6,7 @@
  * entries; resolve env-var-substituted URIs; and persist changes via the
  * LIBRARY_MANAGER / underlying LIBRARY_TABLE::Save() pipeline.
  *
- * Module: kicad_native_library_tables
+ * Module: klicad_native_library_tables
  *
  *   list_symbol_libs(scope='all')      -> [ {name, uri, description, type,
  *                                            options, enabled, visible, scope}, ... ]
@@ -472,7 +472,7 @@ py::dict save()
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_library_tables, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_library_tables, m )
 {
     m.doc() = "KliCAD library-table binding — read/write the symbol and "
               "footprint LIBRARY_TABLEs (global + project scope).  Useful "

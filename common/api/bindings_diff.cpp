@@ -1,5 +1,5 @@
 /*
- * KliCAD subsystem binding: kicad_native_diff — semantic .kicad_sch /
+ * KliCAD subsystem binding: klicad_native_diff — semantic .kicad_sch /
  * .kicad_pcb file diff, keyed by item UUID (KIID).
  *
  *   diff_sch / diff_pcb (path_a, path_b)         -> full added/removed/modified
@@ -784,7 +784,7 @@ py::dict diff_summary_pcb( const std::string& aA, const std::string& aB )
 
 } // anon
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_diff, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_diff, m )
 {
     m.doc() = "KliCAD semantic file-diff binding — compare two .kicad_sch or "
               ".kicad_pcb files at the item level, keyed by UUID (KIID).  "

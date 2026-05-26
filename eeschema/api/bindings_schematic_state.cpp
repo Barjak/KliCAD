@@ -1,7 +1,7 @@
 /*
  * KliCAD subsystem binding: SCHEMATIC state (direct creation).
  *
- * Exposes direct SCH_ITEM creation as kicad_native_schematic_state.* —
+ * Exposes direct SCH_ITEM creation as klicad_native_schematic_state.* —
  * placing symbols, drawing wires, adding labels and junctions.  Fills the
  * gap left by the typed-RPC CreateItems handler, which today refuses to
  * round-trip schematic items.
@@ -971,7 +971,7 @@ Returns: {ok: True, kiid, x_mm, y_mm, w_mm, h_mm}
 
 Wraps SCH_EDIT_FRAME::OpenProjectFiles().  After this returns ok=True
 the SCHEMATIC on the editor is the just-loaded one and subsequent
-calls (get_items_summary, kicad_native_hierarchy.*, etc.) operate
+calls (get_items_summary, klicad_native_hierarchy.*, etc.) operate
 against it.
 
 Returns: {ok, path, sheet_count}.
@@ -985,7 +985,7 @@ Raises:
            R"DOC(Save the active SCHEMATIC in place.
 
 Wraps SCH_EDIT_FRAME::SaveProject(aSaveAs=False).  For "save as",
-drive the EditorControl.saveAs tool action via kicad_native_sch_actions.
+drive the EditorControl.saveAs tool action via klicad_native_sch_actions.
 
 Returns: {ok}.
 

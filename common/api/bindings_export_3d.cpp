@@ -3,7 +3,7 @@
  *
  * Exposes 3D-model export (STEP, STEPZ, BREP, XAO, GLB, VRML, PLY, STL, U3D,
  * PDF) as
- *   kicad_native_export_3d.run(board_path, output, format='step', ...) -> dict
+ *   klicad_native_export_3d.run(board_path, output, format='step', ...) -> dict
  *
  * Mirrors `kicad-cli pcb export {step,glb,brep,xao,stl,ply,vrml,...}` (see
  * kicad/cli/command_pcb_export_3d.cpp) and the typed-RPC handler
@@ -275,7 +275,7 @@ py::object run_export_3d( const std::string&                board_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_export_3d, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_export_3d, m )
 {
     m.doc() = "KliCAD PCB 3D model export binding (calls JOB_EXPORT_PCB_3D "
               "under the hood). Returns a structured dict; never streams. "

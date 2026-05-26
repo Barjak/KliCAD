@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: GERBVIEW state (Pattern B, kiface-resident).
  *
  * Exposes the live GERBVIEW_FRAME's file-loading and layer-control surface
- * as kicad_native_gerbview.* — loading Gerber/Excellon/zip/job files,
+ * as klicad_native_gerbview.* — loading Gerber/Excellon/zip/job files,
  * clearing draw layers, querying the active layer, and enumerating loaded
  * files per layer.
  *

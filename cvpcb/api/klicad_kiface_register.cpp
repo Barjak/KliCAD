@@ -75,7 +75,7 @@ void klicad_register_cvpcb_bindings()
         };
 
         const std::vector<Entry> entries = {
-            { "kicad_native_cvpcb",
+            { "klicad_native_cvpcb",
               "KliCAD direct CVPCB_MAINFRAME state binding (kiface-loaded).",
               &klicad_register_cvpcb_bindings_impl },
         };

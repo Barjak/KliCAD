@@ -3,7 +3,7 @@
  *
  * The embedded interpreter is initialized once per KiCad process when the
  * always-on IPC API server starts, and torn down when the server stops.  Its
- * sole job is to host the kicad_native pybind11 module so that scripted
+ * sole job is to host the klicad_native pybind11 module so that scripted
  * clients can drive KiCad through a single RunPython IPC command instead of
  * requiring per-method proto definitions.
  *

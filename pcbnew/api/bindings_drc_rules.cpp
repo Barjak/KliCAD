@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: DRC custom-rules (.kicad_dru) + length report.
  *
  * Exposes the custom DRC rules text and a structured length report as
- * kicad_native_drc_rules.*  The rules text is the canonical .kicad_dru
+ * klicad_native_drc_rules.*  The rules text is the canonical .kicad_dru
  * sidecar file beside the board: PCB_BASE_EDIT_FRAME::GetDesignRulesPath()
  * (mirrors PROJECT::AbsolutePath(board_basename + .kicad_dru) — see
  * PCB_BASE_EDIT_FRAME::GetDesignRulesPath in pcb_base_edit_frame.cpp and
@@ -184,7 +184,7 @@ ParseOutcome parse_rules_text( const wxString& aText )
 
     try
     {
-        DRC_RULES_PARSER parser( aText, wxT( "kicad_native_drc_rules" ) );
+        DRC_RULES_PARSER parser( aText, wxT( "klicad_native_drc_rules" ) );
         parser.Parse( out.rules, &reporter );
     }
     catch( const IO_ERROR& ioe )

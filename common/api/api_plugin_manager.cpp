@@ -389,8 +389,8 @@ int API_PLUGIN_MANAGER::doInvokeAction( const wxString& aIdentifier, std::vector
 
         if( Pgm().ApiServerOrNull() )
         {
-            env.env[wxS( "KICAD_API_SOCKET" )] = Pgm().GetApiServer().SocketPath();
-            env.env[wxS( "KICAD_API_TOKEN" )] = Pgm().GetApiServer().Token();
+            env.env[wxS( "KLICAD_API_SOCKET" )] = Pgm().GetApiServer().SocketPath();
+            env.env[wxS( "KLICAD_API_TOKEN" )] = Pgm().GetApiServer().Token();
         }
 
         env.cwd = pluginFile.GetPath();
@@ -497,8 +497,8 @@ int API_PLUGIN_MANAGER::doInvokeAction( const wxString& aIdentifier, std::vector
 
         if( Pgm().ApiServerOrNull() )
         {
-            env.env[wxS( "KICAD_API_SOCKET" )] = Pgm().GetApiServer().SocketPath();
-            env.env[wxS( "KICAD_API_TOKEN" )] = Pgm().GetApiServer().Token();
+            env.env[wxS( "KLICAD_API_SOCKET" )] = Pgm().GetApiServer().SocketPath();
+            env.env[wxS( "KLICAD_API_TOKEN" )] = Pgm().GetApiServer().Token();
         }
 
         env.cwd = pluginFile.GetPath();

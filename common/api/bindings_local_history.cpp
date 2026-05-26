@@ -5,7 +5,7 @@
  * that lives in `<project>/.history/` — so scripts can list, inspect, and roll
  * back to prior project states.
  *
- * Module: kicad_native_local_history
+ * Module: klicad_native_local_history
  *
  *   init(project_dir='')                       -> {ok, project_dir, created}
  *   list_commits(project_dir='', max=100)      -> [{hash, message, timestamp_iso,
@@ -494,7 +494,7 @@ py::dict lh_get_current_state( const std::string& aProjectDir )
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_local_history, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_local_history, m )
 {
     m.doc() = "KliCAD local-history binding — git-backed project versioning at "
               "<project>/.history/.  Lists snapshots, inspects commits, and "

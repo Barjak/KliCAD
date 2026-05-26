@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: PAGE LAYOUT (drawing-sheet) editor.
  *
  * Exposes file-level and model-level operations on the PL_EDITOR_FRAME as
- * kicad_native_pagelayout.* — loading/saving .kicad_wks files, inserting
+ * klicad_native_pagelayout.* — loading/saving .kicad_wks files, inserting
  * additional drawing sheets, starting fresh, and reading basic state.
  *
  * Pattern (follows BINDING_PATTERN.md, Pattern B):

@@ -7,7 +7,7 @@
  * inject extra search paths for a one-off run, or sanity-check that the
  * configured aliases point at real directories.
  *
- * Module: kicad_native_3d_resolver
+ * Module: klicad_native_3d_resolver
  *
  *   list_search_paths()                    -> [ {alias, path, description, can_modify}, ... ]
  *   add_search_path(alias, path, desc='')  -> {ok, alias, path}

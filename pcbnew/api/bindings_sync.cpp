@@ -1,5 +1,5 @@
 /*
- * KliCAD binding: schematic -> PCB sync (kicad_native_sync.*).
+ * KliCAD binding: schematic -> PCB sync (klicad_native_sync.*).
  *
  * Mirrors DIALOG_UPDATE_PCB::PerformUpdate: fetch NETLIST (KIWAY
  * MAIL_SCH_GET_NETLIST against eeschema, or from a file), run
@@ -369,7 +369,7 @@ bool fetch_netlist_from_schematic( PCB_EDIT_FRAME* aFrame,
 {
     // Sentinel convention from PCB_EDIT_FRAME::FetchNetlistFromSchematic:
     // if eeschema returns the payload unchanged, the fetch failed.
-    std::string annotateHint = "kicad_native_sync: schematic netlist fetch failed";
+    std::string annotateHint = "klicad_native_sync: schematic netlist fetch failed";
     std::string payload      = annotateHint;
 
     aFrame->Kiway().ExpressMail( FRAME_SCH, MAIL_SCH_GET_NETLIST, payload, aFrame );
@@ -385,7 +385,7 @@ bool fetch_netlist_from_schematic( PCB_EDIT_FRAME* aFrame,
     try
     {
         // KICAD_NETLIST_READER takes ownership of the LINE_READER.
-        auto reader = new STRING_LINE_READER( payload, wxT( "kicad_native_sync" ) );
+        auto reader = new STRING_LINE_READER( payload, wxT( "klicad_native_sync" ) );
         KICAD_NETLIST_READER netlistReader( reader, &aNetlist );
         netlistReader.LoadNetlist();
     }
@@ -508,7 +508,7 @@ py::dict run_netlist_update( PCB_EDIT_FRAME* aFrame,
     // Replicate the data-side of PCB_EDIT_FRAME::OnNetlistChanged
     // (re-sync nets + netclasses, rebuild component-class caches,
     // refresh canvas).  We skip the SpreadFootprints / drag-command UI
-    // step — scripted callers place footprints via kicad_native_pcb_state.
+    // step — scripted callers place footprints via klicad_native_pcb_state.
     if( !aOpts.dry_run && ok )
     {
         try

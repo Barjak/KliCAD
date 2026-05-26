@@ -11,7 +11,7 @@
  * function.  IFACE::OnKifaceStart calls klicad_register_pl_editor_bindings()
  * (defined in klicad_kiface_register.cpp), which:
  *   1. Acquires the GIL.
- *   2. Creates each kicad_native_<name> module via the Python C API and
+ *   2. Creates each klicad_native_<name> module via the Python C API and
  *      inserts it into sys.modules (bypassing inittab entirely).
  *   3. Calls each register function on the freshly-created module.
  *

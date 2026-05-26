@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: footprint-library file-format upgrade.
  *
  * Exposes the footprint-library upgrade-to-current-format operation as
- *   kicad_native_fp_upgrade.run(library_path, ...) -> dict
+ *   klicad_native_fp_upgrade.run(library_path, ...) -> dict
  *
  * Mirrors the behavior of `kicad-cli fp upgrade` (see
  * kicad/cli/command_fp_upgrade.cpp).  Wraps JOB_FP_UPGRADE and dispatches
@@ -127,7 +127,7 @@ py::object run_fp_upgrade( const std::string& library_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_fp_upgrade, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_fp_upgrade, m )
 {
     m.doc() = "KliCAD footprint-library file-format upgrade binding (calls "
               "JOB_FP_UPGRADE under the hood). Returns a structured dict; never "

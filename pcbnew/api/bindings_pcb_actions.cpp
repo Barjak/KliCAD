@@ -9,7 +9,7 @@
  *   from kipy import KiCad
  *   k = KiCad()
  *   r = k.run_python("""
- *   import kicad_native_pcb_actions as pa
+ *   import klicad_native_pcb_actions as pa
  *   print(pa.run_action('pcbnew.InteractiveSelection.clearSelection'))
  *   """)
  *

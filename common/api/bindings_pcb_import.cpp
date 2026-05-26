@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: PCB import (non-KiCad PCB formats -> .kicad_pcb).
  *
  * Exposes the PCB import operation as
- *   kicad_native_pcb_import.run(input_path, output_path, format='auto', ...) -> dict
+ *   klicad_native_pcb_import.run(input_path, output_path, format='auto', ...) -> dict
  *
  * Mirrors the behavior of `kicad-cli pcb import` (see
  * kicad/cli/command_pcb_import.cpp).  Wraps JOB_PCB_IMPORT and dispatches
@@ -242,7 +242,7 @@ py::object run_pcb_import( const std::string& input_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_pcb_import, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_pcb_import, m )
 {
     m.doc() = "KliCAD PCB import binding (calls JOB_PCB_IMPORT under the hood). "
               "Converts a non-KiCad PCB file (Altium, Eagle, CADSTAR, Fabmaster, "

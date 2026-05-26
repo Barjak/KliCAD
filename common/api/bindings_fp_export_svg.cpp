@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: Footprint Library SVG export.
  *
  * Exposes per-footprint / whole-library SVG export as
- *   kicad_native_fp_export_svg.run(library_path, output_dir, ...) -> dict
+ *   klicad_native_fp_export_svg.run(library_path, output_dir, ...) -> dict
  *
  * Mirrors the behavior of `kicad-cli fp export svg` (see
  * kicad/cli/command_fp_export_svg.cpp).  Wraps JOB_FP_EXPORT_SVG and dispatches
@@ -131,7 +131,7 @@ py::object run_fp_export_svg( const std::string&                library_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_fp_export_svg, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_fp_export_svg, m )
 {
     m.doc() = "KliCAD footprint-library SVG export binding (calls JOB_FP_EXPORT_SVG "
               "under the hood). Returns a structured dict; never streams. "

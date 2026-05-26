@@ -23,7 +23,7 @@
  * paradigm (scripted clients poll on demand).  A true push channel for
  * external clients is a separate, larger change.
  *
- * Module: kicad_native_kiway_events
+ * Module: klicad_native_kiway_events
  *
  *   list_mail_types() -> list[str]
  *   subscribe(types=None) -> dict
@@ -552,7 +552,7 @@ py::dict kiway_events_send_mail( const std::string& aDestFrame,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_kiway_events, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_kiway_events, m )
 {
     m.doc() = "KliCAD KIWAY mail events binding.  Subscribe to KIWAY_EXPRESS "
               "events (cross-probe, netlist updates, refresh requests, ...) "
@@ -620,7 +620,7 @@ Internal cap: queue holds at most 16384 events; oldest are dropped on overflow.
 
 Args:
     dest_frame: frame name string ('sch', 'pcb', 'cvpcb', ...) — see
-                kicad_native_gui frame name table for the full set.
+                klicad_native_gui frame name table for the full set.
     mail_type:  MAIL_T name string — see list_mail_types().
     payload:    raw payload string; usually s-expression text.  Defaults to ''.
 

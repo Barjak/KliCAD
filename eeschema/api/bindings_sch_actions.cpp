@@ -8,7 +8,7 @@
  *   from kipy import KiCad
  *   k = KiCad()
  *   r = k.run_python("""
- *   import kicad_native_sch_actions as sa
+ *   import klicad_native_sch_actions as sa
  *   print(sa.run_action('eeschema.InteractiveSelection.clearSelection'))
  *   """)
  *

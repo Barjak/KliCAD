@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: footprint library editor.
  *
  * Exposes the FOOTPRINT_EDIT_FRAME + FOOTPRINT_LIBRARY_ADAPTER surface as
- * kicad_native_footprint_editor.* — programmatic footprint-library editing:
+ * klicad_native_footprint_editor.* — programmatic footprint-library editing:
  *   - enumerate loaded libraries / footprints
  *   - inspect a footprint (lib_id, name, pad count, layer, value, description, ...)
  *   - list pads on a footprint
@@ -451,7 +451,7 @@ py::dict fp_ed_save_current()
 //
 // The footprint editor edits one footprint at a time (no multi-buffer
 // library manager like SYMBOL_EDIT_FRAME), so "save all" is equivalent to
-// "save current".  Kept for API symmetry with kicad_native_symbol_editor.
+// "save current".  Kept for API symmetry with klicad_native_symbol_editor.
 py::dict fp_ed_save_all()
 {
     return fp_ed_save_current();
@@ -649,7 +649,7 @@ Returns {ok: bool, content_modified: bool, error?: str}.
            R"DOC(Equivalent to save_current() — the footprint editor edits one
 footprint at a time (no multi-buffer library manager), so there is no
 distinct save-all operation.  Kept for API symmetry with
-kicad_native_symbol_editor.save_all().
+klicad_native_symbol_editor.save_all().
 
 Returns {ok: bool, content_modified: bool, error?: str}.
 )DOC" );

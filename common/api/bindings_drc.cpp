@@ -1,10 +1,10 @@
 /*
  * KliCAD subsystem binding: DRC.
  *
- * Exposes Design Rules Check as kicad_native.drc.run(board_path, ...).
+ * Exposes Design Rules Check as klicad_native.drc.run(board_path, ...).
  *
  * Pattern (every subsystem binding TU mirrors this shape):
- *   1. Pure-Python entry: kicad_native.drc.run(path, options...) -> dict
+ *   1. Pure-Python entry: klicad_native.drc.run(path, options...) -> dict
  *   2. Internally constructs the matching JOB_* class
  *   3. Dispatches via the live KIWAY (found via toplevel-window walk)
  *   4. Writes JSON to a temp file, parses, returns dict — never raw streams
@@ -226,7 +226,7 @@ py::object run_drc( const std::string& board_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_drc, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_drc, m )
 {
     m.doc() = "KliCAD DRC subsystem binding (calls JOB_PCB_DRC under the hood). "
               "Returns a structured dict; never streams. Requires KiCad's GUI to "

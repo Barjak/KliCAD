@@ -1,12 +1,12 @@
 /*
- * Local fork addition: the kicad_native pybind11 module.
+ * Local fork addition: the klicad_native pybind11 module.
  *
  * This is the *single Python-side import* through which scripted clients
  * reach into KiCad's C++ object model.  The intent is for every IPC handler /
  * subsystem to add its own bindings here (or in a per-subsystem TU that gets
  * compiled into kicommon / the relevant kiface) so that
  *
- *     from kicad_native import ...
+ *     from klicad_native import ...
  *
  * grows automatically with each new bound class.  No proto schemas required.
  *
@@ -23,7 +23,7 @@
 
 namespace py = pybind11;
 
-PYBIND11_EMBEDDED_MODULE( kicad_native, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native, m )
 {
     m.doc() = "KiCad native bindings (local fork). Single import point for "
               "all scripted access to KiCad's C++ object model.";

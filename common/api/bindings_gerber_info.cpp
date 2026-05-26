@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: Gerber Info.
  *
  * Exposes the GerbView gerber-info subsystem as
- *   kicad_native_gerber_info.run(gerber_path, ...).
+ *   klicad_native_gerber_info.run(gerber_path, ...).
  *
  * Mirrors bindings_gerber_diff.cpp (the closest peer: same GerbView face
  * KIWAY::FACE_GERBVIEW dispatched via FRAME_GERBER).  Wraps JOB_GERBER_INFO;
@@ -153,7 +153,7 @@ py::object run_gerber_info( const std::string& gerber_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_gerber_info, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_gerber_info, m )
 {
     m.doc() = "KliCAD Gerber Info subsystem binding (calls JOB_GERBER_INFO "
               "via KIWAY::FACE_GERBVIEW under the hood). Returns a structured "

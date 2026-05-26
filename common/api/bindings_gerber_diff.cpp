@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: Gerber Diff.
  *
  * Exposes the GerbView gerber-diff subsystem as
- *   kicad_native_gerber_diff.run(reference_gerber, comparison_gerber, ...).
+ *   klicad_native_gerber_diff.run(reference_gerber, comparison_gerber, ...).
  *
  * Mirrors bindings_drc.cpp / bindings_erc.cpp but targets KIWAY::FACE_GERBVIEW
  * via FRAME_GERBER.  Wraps JOB_GERBER_DIFF; see common/jobs/job_gerber_diff.h
@@ -123,7 +123,7 @@ py::object run_gerber_diff( const std::string& reference_gerber,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_gerber_diff, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_gerber_diff, m )
 {
     m.doc() = "KliCAD Gerber Diff subsystem binding (calls JOB_GERBER_DIFF "
               "via KIWAY::FACE_GERBVIEW under the hood). Returns a structured "

@@ -3,7 +3,7 @@
  *
  * Exposes JOB_SYM_EXPORT_SVG (the eeschema-side symbol library -> SVG
  * exporter that backs `kicad-cli sym export svg`) as
- * kicad_native_sym_export_svg.run(library_path, output_dir, ...).
+ * klicad_native_sym_export_svg.run(library_path, output_dir, ...).
  *
  * Mirrors bindings_erc.cpp / bindings_export_sch_plot.cpp; see
  * BINDING_PATTERN.md for the per-subsystem recipe.
@@ -122,7 +122,7 @@ py::object run_sym_export_svg( const std::string& library_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_sym_export_svg, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_sym_export_svg, m )
 {
     m.doc() = "KliCAD symbol-library SVG export binding (calls JOB_SYM_EXPORT_SVG "
               "under the hood via the eeschema kiface). Returns a structured dict; "

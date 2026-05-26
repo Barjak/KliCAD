@@ -1,7 +1,7 @@
 /*
  * KliCAD subsystem binding: 3D viewer programmatic control.
  *
- * Exposes the running EDA_3D_VIEWER_FRAME as kicad_native_3d_viewer.* —
+ * Exposes the running EDA_3D_VIEWER_FRAME as klicad_native_3d_viewer.* —
  * snapshot capture, view presets, render mode toggle, layer visibility,
  * camera control.
  *

@@ -1,7 +1,7 @@
 /*
  * KliCAD subsystem binding: pcb_calculator (pure-math subset).
  *
- * Module: kicad_native_pcb_calculator
+ * Module: klicad_native_pcb_calculator
  *
  * KiCad's PCB Calculator is implemented as a kiface (pcb_calculator_kiface)
  * with a wxWidgets frame.  This binding exposes only the *math* layer —
@@ -695,7 +695,7 @@ py::dict fusing_current( double aWidthMm, double aThicknessOz, double aFusingTim
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_pcb_calculator, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_pcb_calculator, m )
 {
     m.doc() = "KliCAD PCB Calculator binding (pure-math subset).  Reimplements "
               "the formulas from pcb_calculator/* — E-series tables, attenuator "

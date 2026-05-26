@@ -1,7 +1,7 @@
 /*
  * KliCAD subsystem binding: ERC.
  *
- * Exposes Electrical Rules Check as kicad_native_erc.run(schematic_path, ...).
+ * Exposes Electrical Rules Check as klicad_native_erc.run(schematic_path, ...).
  * Mirrors bindings_drc.cpp; see that file for the per-subsystem pattern.
  */
 
@@ -137,7 +137,7 @@ py::object run_erc( const std::string& schematic_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_erc, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_erc, m )
 {
     m.doc() = "KliCAD ERC subsystem binding (calls JOB_SCH_ERC under the hood). "
               "Returns a structured dict; never streams. Requires KiCad's GUI to "
@@ -149,7 +149,7 @@ PYBIND11_EMBEDDED_MODULE( kicad_native_erc, m )
            py::arg( "severity" ) = "warning",
            R"DOC(Run ERC on the given .kicad_sch file.
 
-Returns a dict with the same shape as kicad_native_drc.run:
+Returns a dict with the same shape as klicad_native_drc.run:
   ok, exit_code, messages, report_path, json_text, report (parsed dict)
 )DOC" );
 }

@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: schematic BOM export.
  *
  * Exposes JOB_EXPORT_SCH_BOM as
- *   kicad_native_export_sch_bom.run(schematic_path, output, **opts).
+ *   klicad_native_export_sch_bom.run(schematic_path, output, **opts).
  *
  * Mirrors bindings_erc.cpp / bindings_export_sch_plot.cpp; see
  * BINDING_PATTERN.md for the per-subsystem recipe.
@@ -168,7 +168,7 @@ py::object run_export_sch_bom( const std::string&              schematic_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_export_sch_bom, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_export_sch_bom, m )
 {
     m.doc() = "KliCAD schematic BOM export binding (calls JOB_EXPORT_SCH_BOM "
               "under the hood). Returns a structured dict; never streams. "

@@ -75,7 +75,7 @@ void klicad_register_pl_editor_bindings()
         };
 
         const std::vector<Entry> entries = {
-            { "kicad_native_pagelayout",
+            { "klicad_native_pagelayout",
               "KliCAD drawing-sheet (page layout) editor binding (kiface-loaded).",
               &klicad_register_pagelayout_bindings },
         };

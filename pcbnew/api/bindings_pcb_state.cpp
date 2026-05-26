@@ -1,7 +1,7 @@
 /*
  * KliCAD subsystem binding: BOARD state (direct creation).
  *
- * Exposes direct BOARD_ITEM creation as kicad_native_pcb_state.* —
+ * Exposes direct BOARD_ITEM creation as klicad_native_pcb_state.* —
  * placing tracks, vias, footprints and inspecting the running BOARD.
  * Fills the gap left by the typed-RPC CreateItems handler, which today
  * cannot round-trip a number of board-item kinds.
@@ -691,7 +691,7 @@ prefers any user-renamed copper layer name.
 
 Wraps PCB_EDIT_FRAME::OpenProjectFiles().  After this returns ok=True
 the BOARD on the editor is the just-loaded one and subsequent calls
-(list_layers, get_board_info, kicad_native_netinfo.*, etc.) operate
+(list_layers, get_board_info, klicad_native_netinfo.*, etc.) operate
 against it.
 
 Returns: {ok, path, filename}.
@@ -708,7 +708,7 @@ Raises:
 Wraps PCB_EDIT_FRAME::SavePcbFile() without project rename and without
 adding to file history (so headless saves don't pollute the recent-
 files list).  For "save as" with project rename, drive the
-EditorControl.saveAs tool action through kicad_native_pcb_actions.
+EditorControl.saveAs tool action through klicad_native_pcb_actions.
 
 Returns: {ok, path}.
 

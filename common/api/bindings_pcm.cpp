@@ -13,7 +13,7 @@
  * walk + parse installed_packages.json — using only stdlib and
  * <nlohmann/json.hpp>, both of which are already libkicommon-reachable.
  *
- * Module: kicad_native_pcm
+ * Module: klicad_native_pcm
  *
  *   list_installed()                          -> list[dict]
  *   list_packages_dir(package_kind='all')     -> list[dict]
@@ -551,7 +551,7 @@ std::string pcm_module_get_packages_dir()
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_pcm, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_pcm, m )
 {
     m.doc() = "KliCAD Plugin Content Manager binding — read-only filesystem "
               "walk over the 3rdparty/ tree managed by KiCad's PCM.  Lists "

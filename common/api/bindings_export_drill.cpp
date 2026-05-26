@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: PCB Drill export.
  *
  * Exposes drill file export as
- *   kicad_native_export_drill.run(board_path, output_dir, ...) -> dict
+ *   klicad_native_export_drill.run(board_path, output_dir, ...) -> dict
  *
  * Mirrors the behavior of `kicad-cli pcb export drill` (see
  * kicad/cli/command_pcb_export_drill.cpp).  Wraps JOB_EXPORT_PCB_DRILL and
@@ -189,7 +189,7 @@ py::object run_export_drill( const std::string& board_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_export_drill, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_export_drill, m )
 {
     m.doc() = "KliCAD PCB drill export binding (calls JOB_EXPORT_PCB_DRILL "
               "under the hood). Returns a structured dict; never streams. "

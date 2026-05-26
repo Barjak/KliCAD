@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: schematic plot/export.
  *
  * Exposes JOB_EXPORT_SCH_PLOT (PDF / SVG / DXF / Postscript) as
- * kicad_native_export_sch_plot.run(schematic_path, output, format, ...).
+ * klicad_native_export_sch_plot.run(schematic_path, output, format, ...).
  *
  * Mirrors bindings_erc.cpp / bindings_drc.cpp; see BINDING_PATTERN.md
  * for the per-subsystem recipe.
@@ -178,7 +178,7 @@ py::object run_export_sch_plot( const std::string& schematic_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_export_sch_plot, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_export_sch_plot, m )
 {
     m.doc() = "KliCAD schematic plot/export binding (calls JOB_EXPORT_SCH_PLOT_* "
               "under the hood). Returns a structured dict; never streams. "

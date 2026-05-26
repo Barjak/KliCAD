@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: CVPCB state (Pattern B, kiface-resident).
  *
  * Exposes CVPCB_MAINFRAME component-to-footprint association as
- * kicad_native_cvpcb.* — load netlist, enumerate components, list footprint
+ * klicad_native_cvpcb.* — load netlist, enumerate components, list footprint
  * candidates, assign/clear, auto-associate, and save back-annotation.
  *
  * Per BINDING_PATTERN.md Pattern B: spawn FRAME_CVPCB via KIWAY::Player if

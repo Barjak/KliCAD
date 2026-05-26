@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: schematic ANNOTATION (Pattern B, eeschema kiface).
  *
  * Exposes programmatic reference-designator assignment, clearing, summary, and
- * PCB->SCH back-annotation as kicad_native_annotation.*  This unblocks the
+ * PCB->SCH back-annotation as klicad_native_annotation.*  This unblocks the
  * priority-1 use case: assigning ref-des in bulk from Python and pulling
  * pin/footprint/value changes from a pcbnew-exported netlist back into the
  * schematic without GUI interaction.

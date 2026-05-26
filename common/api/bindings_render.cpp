@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: PCB raytraced render (image export).
  *
  * Exposes 3D PCB rendering as
- *   kicad_native_render.run(board_path, output, format='png', side='top', ...) -> dict
+ *   klicad_native_render.run(board_path, output, format='png', side='top', ...) -> dict
  *
  * Mirrors `kicad-cli pcb render` (see kicad/cli/command_pcb_render.cpp) and
  * wraps JOB_PCB_RENDER, dispatching via the live KIWAY (found by walking
@@ -228,7 +228,7 @@ py::object run_render( const std::string& board_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_render, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_render, m )
 {
     m.doc() = "KliCAD PCB render binding (calls JOB_PCB_RENDER under the hood). "
               "Renders the 3D board view to a PNG or JPEG image. Returns a "

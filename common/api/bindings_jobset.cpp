@@ -3,11 +3,11 @@
  *
  * Exposes two operations on a .kicad_jobset file:
  *
- *   kicad_native_jobset.load(jobset_path)              -> dict
+ *   klicad_native_jobset.load(jobset_path)              -> dict
  *       Parses the jobset file and returns a description of its jobs and
  *       destinations.  Does NOT execute anything; cheap, no KIWAY needed.
  *
- *   kicad_native_jobset.run(jobset_path,
+ *   klicad_native_jobset.run(jobset_path,
  *                           destinations=None,
  *                           stop_on_error=False)       -> dict
  *       Dispatches the jobset through JOBS_RUNNER, mirroring what
@@ -388,7 +388,7 @@ py::object run_jobset( const std::string&                     jobset_path,
 } // anonymous namespace
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_jobset, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_jobset, m )
 {
     m.doc() = "KliCAD JOBSET binding (calls JOBSET + JOBS_RUNNER under the hood). "
               "Exposes two operations: load() to introspect a .kicad_jobset file "

@@ -5,7 +5,7 @@
  * can programmatically read/write things the GUI Preferences dialog otherwise
  * monopolises (autosave interval, themes, env vars, file history size, ...).
  *
- * Module: kicad_native_settings
+ * Module: klicad_native_settings
  *
  *   get(path)           -> value (int/float/str/bool/list/dict)
  *   set(path, value)    -> {ok, old_value, new_value, persisted}
@@ -304,7 +304,7 @@ py::dict settings_save()
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_settings, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_settings, m )
 {
     m.doc() = "KliCAD settings binding — read/write COMMON_SETTINGS (kicad_common.json) "
               "via JSON-pointer dotted paths.  Persists via SETTINGS_MANAGER. "

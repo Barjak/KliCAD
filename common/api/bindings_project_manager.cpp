@@ -7,7 +7,7 @@
  * SETTINGS_MANAGER and PROJECT live inside libkicommon, so this is Pattern A
  * (`PYBIND11_EMBEDDED_MODULE`); no kiface symbols required.
  *
- * Module: kicad_native_project_manager
+ * Module: klicad_native_project_manager
  *
  *   get_current_project()           -> dict | None
  *   list_open_projects()            -> list[dict]
@@ -379,7 +379,7 @@ bool pm_is_project_open_not_dummy()
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_project_manager, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_project_manager, m )
 {
     m.doc() = "KliCAD project manager binding --- drive SETTINGS_MANAGER's "
               "project lifecycle (load/unload/save/save-as/save-copy) and "

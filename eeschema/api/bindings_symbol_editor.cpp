@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: symbol library editor.
  *
  * Exposes the SYMBOL_EDIT_FRAME + LIB_SYMBOL_LIBRARY_MANAGER surface as
- * kicad_native_symbol_editor.* — programmatic symbol-library editing:
+ * klicad_native_symbol_editor.* — programmatic symbol-library editing:
  *   - enumerate loaded libraries / symbols
  *   - inspect a symbol (lib_id, name, pin count, unit count, ref, ...)
  *   - load a symbol into the editor

@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: PCB Gerbers export.
  *
  * Exposes Gerber file export as
- *   kicad_native_export_gerbers.run(board_path, output_dir, ...) -> dict
+ *   klicad_native_export_gerbers.run(board_path, output_dir, ...) -> dict
  *
  * Mirrors the behavior of `kicad-cli pcb export gerbers` (see
  * kicad/cli/command_pcb_export_gerbers.cpp and the parent
@@ -154,7 +154,7 @@ py::object run_export_gerbers( const std::string&                board_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_export_gerbers, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_export_gerbers, m )
 {
     m.doc() = "KliCAD PCB Gerbers export binding (calls JOB_EXPORT_PCB_GERBERS "
               "under the hood). Returns a structured dict; never streams. "

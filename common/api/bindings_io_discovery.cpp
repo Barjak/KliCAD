@@ -1,7 +1,7 @@
 /*
  * KliCAD subsystem binding: IO plugin discovery.
  *
- * Module: kicad_native_io_discovery
+ * Module: klicad_native_io_discovery
  *
  *   list_sch_formats()              -> [dict, ...]
  *   list_pcb_formats()              -> [dict, ...]
@@ -376,7 +376,7 @@ py::object io_discovery_format_for_extension( const std::string& aExt )
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_io_discovery, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_io_discovery, m )
 {
     m.doc() = "KliCAD IO plugin discovery — enumerate the schematic and PCB file "
               "formats this build of KiCad knows about, with their canonical "

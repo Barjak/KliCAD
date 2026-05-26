@@ -7,7 +7,7 @@
  * routed through the DESIGN_BLOCK_LIBRARY_ADAPTER so we can list blocks inside
  * each library and resolve LIB_IDs to DESIGN_BLOCK metadata.
  *
- * Module: kicad_native_design_blocks
+ * Module: klicad_native_design_blocks
  *
  *   list_design_block_libs(scope='all')
  *       -> [ {name, uri, type, description, options, enabled, visible, scope}, ... ]
@@ -29,7 +29,7 @@
  *     DESIGN_BLOCK_LIBRARY_ADAPTER) live in libkicommon.
  *   - Project-scope ops require an open project; global ops are always
  *     available once KiCad has booted.
- *   - Changes from add/remove are in-memory until kicad_native_library_tables.
+ *   - Changes from add/remove are in-memory until klicad_native_library_tables.
  *     save() is called (the existing save() handler iterates symbol/footprint
  *     tables only -- the DB table is persisted by the same LIBRARY_TABLE::Save
  *     plumbing, but exposing a save here would duplicate that handler;
@@ -414,7 +414,7 @@ py::dict get_design_block_info( const std::string& aLibId )
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_design_blocks, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_design_blocks, m )
 {
     m.doc() = "KliCAD design-block binding — read/write the DESIGN_BLOCK "
               "LIBRARY_TABLE (global + project scope), enumerate blocks in a "

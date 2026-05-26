@@ -1,7 +1,7 @@
 /*
- * KliCAD binding: advanced SPICE simulator surface — kicad_native_sim_advanced.
+ * KliCAD binding: advanced SPICE simulator surface — klicad_native_sim_advanced.
  *
- * Layered on kicad_native_simulator.  Pattern B (kiface-resident).  Same kiface
+ * Layered on klicad_native_simulator.  Pattern B (kiface-resident).  Same kiface
  * as bindings_simulator.cpp; see its header for the no-PYBIND11_EMBEDDED_MODULE
  * rationale.  Surface: save/load_workbook, parameter_sweep, add/list/set/remove_
  * tuner, measure, list_measurements, fft, set/get_simulation_parameter.
@@ -753,7 +753,7 @@ void klicad_register_sim_advanced_bindings( py::module_& m )
 {
     m.doc() = "KliCAD advanced SPICE simulator binding — workbook persistence, "
               "parameter sweeps, tuners, measurements, FFT, and ngspice "
-              "parameter access.  Layered on top of kicad_native_simulator.";
+              "parameter access.  Layered on top of klicad_native_simulator.";
 
     m.def( "save_workbook", &sim_adv_save_workbook, py::arg( "path" ),
            "Save the current SIMULATOR_FRAME workbook to a .kicad_wks file." );
@@ -768,7 +768,7 @@ void klicad_register_sim_advanced_bindings( py::module_& m )
            "Sweep `parameter` over [start, stop] in step increments, running "
            "analysis ('tran'|'ac'|'dc'|'op'|'noise') with analysis_args at each "
            "value.  Returns {parameter, analysis, values, plots, errors}.  Pair "
-           "with kicad_native_simulator.get_vector(name, plot=plots[i])." );
+           "with klicad_native_simulator.get_vector(name, plot=plots[i])." );
 
     m.def( "add_tuner", &sim_adv_add_tuner, py::arg( "component_ref" ),
            "Add a tuner slider for the symbol with the given hierarchical ref. "

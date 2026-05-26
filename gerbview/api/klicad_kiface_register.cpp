@@ -75,7 +75,7 @@ void klicad_register_gerbview_bindings()
         };
 
         const std::vector<Entry> entries = {
-            { "kicad_native_gerbview",
+            { "klicad_native_gerbview",
               "KliCAD direct GERBVIEW_FRAME state binding (kiface-loaded).",
               &klicad_register_gerbview_bindings_impl },
         };

@@ -7,7 +7,7 @@
  *
  *   from kipy import KiCad
  *   k = KiCad()
- *   k.run_python("import kicad_native_gui as g; g.show_frame('simulator')")
+ *   k.run_python("import klicad_native_gui as g; g.show_frame('simulator')")
  *
  * Frame-name strings are stable identifiers we define here — they do NOT
  * match KiCad's internal FRAME_T enum names verbatim, but are documented in
@@ -150,9 +150,9 @@ py::object show_frame( const std::string& name, bool raise_to_front )
         r[ "error" ]    = std::string(
             "FRAME_PCB_DISPLAY3D is not spawnable via show_frame() — upstream "
             "spawns it as a child of PCB_EDIT_FRAME, not through the kiway "
-            "frame factory.  Use kicad_native_3d_viewer instead (any call "
+            "frame factory.  Use klicad_native_3d_viewer instead (any call "
             "auto-spawns it via PCB_BASE_FRAME::CreateAndShow3D_Frame), e.g.: "
-            "kicad_native_3d_viewer.is_open()" );
+            "klicad_native_3d_viewer.is_open()" );
         return r;
     }
 
@@ -399,7 +399,7 @@ py::list list_open_frames()
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_gui, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_gui, m )
 {
     m.doc() = "KliCAD GUI control: launch/raise KiCad frames programmatically. "
               "Wraps KIWAY::Player() for every known FRAME_T.";

@@ -3,7 +3,7 @@
  *
  * Exposes BOARD::GetDesignSettings().GetStackupDescriptor() — the
  * BOARD_STACKUP descriptor with its BOARD_STACKUP_ITEM list — as
- * kicad_native_stackup.*  Read the layer list, list predefined
+ * klicad_native_stackup.*  Read the layer list, list predefined
  * dielectric materials, and mutate per-layer thickness / material /
  * color.  rebuild_stackup() calls BOARD_STACKUP::SynchronizeWithBoard
  * which re-derives the list from BOARD_DESIGN_SETTINGS (adds missing

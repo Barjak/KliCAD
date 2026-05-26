@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: Gerber Export PNG.
  *
  * Exposes the GerbView "convert to PNG" subsystem as
- *   kicad_native_gerber_export_png.run(gerber_paths, output_dir, ...).
+ *   klicad_native_gerber_export_png.run(gerber_paths, output_dir, ...).
  *
  * Mirrors bindings_gerber_diff.cpp (peer GerbView-faced binding) and
  * bindings_export_drill.cpp (peer multi-file/output_dir binding).  Wraps
@@ -167,7 +167,7 @@ py::object run_gerber_export_png( const std::vector<std::string>& gerber_paths,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_gerber_export_png, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_gerber_export_png, m )
 {
     m.doc() = "KliCAD Gerber Export PNG subsystem binding (calls "
               "JOB_GERBER_EXPORT_PNG via KIWAY::FACE_GERBVIEW under the hood). "

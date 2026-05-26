@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: schematic file-format upgrade.
  *
  * Exposes the schematic upgrade-to-current-format operation as
- *   kicad_native_sch_upgrade.run(schematic_path, ...) -> dict
+ *   klicad_native_sch_upgrade.run(schematic_path, ...) -> dict
  *
  * Mirrors the behavior of `kicad-cli sch upgrade` (see
  * kicad/cli/command_sch_upgrade.cpp) and the PCB-side symmetric binding in
@@ -112,7 +112,7 @@ py::object run_sch_upgrade( const std::string& schematic_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_sch_upgrade, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_sch_upgrade, m )
 {
     m.doc() = "KliCAD schematic file-format upgrade binding (calls "
               "JOB_SCH_UPGRADE under the hood). Returns a structured dict; "

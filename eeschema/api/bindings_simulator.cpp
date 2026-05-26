@@ -1,5 +1,5 @@
 /*
- * KliCAD subsystem binding: SPICE simulator (ngspice) — kicad_native_simulator.
+ * KliCAD subsystem binding: SPICE simulator (ngspice) — klicad_native_simulator.
  *
  * Exposes programmatic access to the running SIMULATOR_FRAME's SPICE_SIMULATOR:
  *   - generate_netlist_from_schematic()  — run NETLIST_EXPORTER_SPICE

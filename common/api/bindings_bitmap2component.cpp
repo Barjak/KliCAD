@@ -1,7 +1,7 @@
 /*
  * KliCAD subsystem binding: bitmap-to-component converter.
  *
- * Module: kicad_native_bitmap2component
+ * Module: klicad_native_bitmap2component
  *
  *   convert(input_image, output_path, output_format, options={})
  *                                       -> dict   (STUB: raises NotImplementedError)
@@ -208,7 +208,7 @@ py::dict b2c_convert( const std::string& aInputImage,
 
     if( !format_known )
     {
-        std::string msg = "kicad_native_bitmap2component.convert: unknown "
+        std::string msg = "klicad_native_bitmap2component.convert: unknown "
                           "output_format '" + aOutputFormat + "'. "
                           "Call list_supported_formats() for the accepted set.";
         throw std::runtime_error( msg );
@@ -216,7 +216,7 @@ py::dict b2c_convert( const std::string& aInputImage,
 
     PyErr_SetString(
         PyExc_NotImplementedError,
-        "kicad_native_bitmap2component.convert is not wired up in this build. "
+        "klicad_native_bitmap2component.convert is not wired up in this build. "
         "The conversion code (BITMAPCONV_INFO from bitmap2component/) is not "
         "linkable into libkicommon because the potrace static library and the "
         "bitmap2component implementation TU are only attached to the "
@@ -234,7 +234,7 @@ py::dict b2c_convert( const std::string& aInputImage,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_bitmap2component, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_bitmap2component, m )
 {
     m.doc() = "KliCAD bitmap-to-component binding (STUB). "
               "The metadata helpers list_supported_formats() and "

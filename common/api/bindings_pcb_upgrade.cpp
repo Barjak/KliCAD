@@ -2,7 +2,7 @@
  * KliCAD subsystem binding: PCB file-format upgrade.
  *
  * Exposes the PCB upgrade-to-current-format operation as
- *   kicad_native_pcb_upgrade.run(board_path, ...) -> dict
+ *   klicad_native_pcb_upgrade.run(board_path, ...) -> dict
  *
  * Mirrors the behavior of `kicad-cli pcb upgrade` (see
  * kicad/cli/command_pcb_upgrade.cpp).  Wraps JOB_PCB_UPGRADE and dispatches
@@ -105,7 +105,7 @@ py::object run_pcb_upgrade( const std::string& board_path,
 } // anon
 
 
-PYBIND11_EMBEDDED_MODULE( kicad_native_pcb_upgrade, m )
+PYBIND11_EMBEDDED_MODULE( klicad_native_pcb_upgrade, m )
 {
     m.doc() = "KliCAD PCB file-format upgrade binding (calls JOB_PCB_UPGRADE "
               "under the hood). Returns a structured dict; never streams. "

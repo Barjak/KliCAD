@@ -1,5 +1,5 @@
 /*
- * KliCAD: schematic hierarchy + sheet navigation as kicad_native_hierarchy.*.
+ * KliCAD: schematic hierarchy + sheet navigation as klicad_native_hierarchy.*.
  * Pattern B (eeschema kiface-resident) — see klicad_kiface_register.h.
  */
 
