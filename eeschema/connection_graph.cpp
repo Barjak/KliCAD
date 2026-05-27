@@ -2880,6 +2880,45 @@ void CONNECTION_GRAPH::assignNetCodesToBus( SCH_CONNECTION* aConnection )
 }
 
 
+/**
+ * Resolve which SCH_SHEET to push onto @a aPath when descending via a
+ * hierarchical pin whose owning sheet is @a aPinParent.
+ *
+ * For multi-channel (repeat_count > 1) sheets, BuildSheetList materialises
+ * N synthetic-clone SCH_SHEET children sharing the template's screen, each
+ * with a distinct slot KIID (see SCH_SHEET::IsSynthetic / GetTemplate,
+ * landed in Phase R1).  A hierarchical sheet pin always lives on the
+ * on-canvas template SCH_SHEET — clones are never inserted into any
+ * screen's items list — so a naive `path.push_back( pin->GetParent() )`
+ * always pushes the template, collapsing all N slot contexts to slot 0.
+ *
+ * When the path being extended already ends in a synthetic clone whose
+ * GetTemplate() matches @a aPinParent, the correct slot identity is the
+ * clone itself.  In that case return the clone so the resulting path
+ * preserves the per-slot KIID that downstream lookups (e.g. the
+ * sheet-to-subgraphs map) key on.
+ *
+ * Non-multi-channel schematics never hit the synthetic-clone branch and
+ * receive @a aPinParent unchanged, preserving pre-R1 behavior.
+ *
+ * Concern F' of the Phase R2 audit
+ * (~/projects/klicad-python/docs/plans/multi-channel-r2-audit.md).
+ */
+static SCH_SHEET* resolveHierPinPushTarget( const SCH_SHEET_PATH& aPath,
+                                            SCH_SHEET* aPinParent )
+{
+    if( aPath.size() > 0 && aPinParent )
+    {
+        SCH_SHEET* last = aPath.Last();
+
+        if( last && last->IsSynthetic() && last->GetTemplate() == aPinParent )
+            return last;
+    }
+
+    return aPinParent;
+}
+
+
 void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, bool aForce )
 {
     SCH_CONNECTION* conn = aSubgraph->m_driver_connection;
@@ -2892,7 +2931,8 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
         for( SCH_SHEET_PIN* pin : aParent->m_hier_pins )
         {
             SCH_SHEET_PATH path = aParent->m_sheet;
-            path.push_back( pin->GetParent() );
+            path.push_back( resolveHierPinPushTarget( aParent->m_sheet,
+                                                     pin->GetParent() ) );
 
             auto it = m_sheet_to_subgraphs_map.find( path );
 
