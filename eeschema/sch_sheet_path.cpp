@@ -534,10 +534,36 @@ wxString SCH_SHEET_PATH::PathHumanReadable( bool aUseShortRootName,
     // Start at startIdx + 1 since we've already processed the root sheet.
     for( unsigned i = startIdx + 1; i < size(); i++ )
     {
-        wxString sheetName = at( i )->GetField( FIELD_T::SHEET_NAME )->GetShownText( false );
+        SCH_SHEET* segment = at( i );
+        wxString   sheetName = segment->GetField( FIELD_T::SHEET_NAME )->GetShownText( false );
 
         if( aEscapeSheetNames )
             sheetName = EscapeString( sheetName, CTX_NETNAME );
+
+        // Multi-channel disambiguation: synthetic clones share the
+        // template's SHEET_NAME field, so the bare sheet name collides
+        // across slots (e.g. /Channel/ for all N clones).  Append the
+        // slot index (1..N-1) to make the human-readable path unique
+        // per slot.  Slot 0 (the on-canvas template) is left as-is to
+        // preserve today's output for non-multi-channel hierarchies.
+        if( segment->IsSynthetic() )
+        {
+            SCH_SHEET* tmpl = segment->GetTemplate();
+
+            if( tmpl )
+            {
+                const std::vector<KIID>& slots = tmpl->GetRepeatInstances();
+
+                for( size_t k = 0; k < slots.size(); ++k )
+                {
+                    if( slots[k] == segment->m_Uuid )
+                    {
+                        sheetName << wxS( ":" ) << ( static_cast<int>( k ) + 1 );
+                        break;
+                    }
+                }
+            }
+        }
 
         s << sheetName << wxS( "/" );
     }
