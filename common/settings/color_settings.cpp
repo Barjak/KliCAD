@@ -99,6 +99,7 @@ COLOR_SETTINGS::COLOR_SETTINGS( const wxString& aFilename, bool aAbsolutePath ) 
     CLR( "schematic.page_limits",       LAYER_SCHEMATIC_PAGE_LIMITS  );
     CLR( "schematic.op_voltages",       LAYER_OP_VOLTAGES            );
     CLR( "schematic.op_currents",       LAYER_OP_CURRENTS            );
+    CLR( "schematic.ratsnest",          LAYER_SCH_RATSNEST           );
 
     CLR( "gerbview.axes",               LAYER_GERBVIEW_AXES          );
     CLR( "gerbview.background",         LAYER_GERBVIEW_BACKGROUND    );
