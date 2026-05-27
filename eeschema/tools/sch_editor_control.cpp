@@ -3280,6 +3280,18 @@ int SCH_EDITOR_CONTROL::ToggleOPCurrents( const TOOL_EVENT& aEvent )
 }
 
 
+int SCH_EDITOR_CONTROL::ToggleSchRatsnest( const TOOL_EVENT& aEvent )
+{
+    EESCHEMA_SETTINGS* cfg = m_frame->eeconfig();
+    cfg->m_Appearance.show_sch_ratsnest = !cfg->m_Appearance.show_sch_ratsnest;
+
+    getView()->SetLayerVisible( LAYER_SCH_RATSNEST, cfg->m_Appearance.show_sch_ratsnest );
+    m_frame->GetCanvas()->Refresh();
+
+    return 0;
+}
+
+
 int SCH_EDITOR_CONTROL::TogglePinAltIcons( const TOOL_EVENT& aEvent )
 {
     EESCHEMA_SETTINGS* cfg = m_frame->eeconfig();
@@ -3564,6 +3576,7 @@ void SCH_EDITOR_CONTROL::setTransitions()
     Go( &SCH_EDITOR_CONTROL::MarkSimExclusions,       SCH_ACTIONS::markSimExclusions.MakeEvent() );
     Go( &SCH_EDITOR_CONTROL::ToggleOPVoltages,        SCH_ACTIONS::toggleOPVoltages.MakeEvent() );
     Go( &SCH_EDITOR_CONTROL::ToggleOPCurrents,        SCH_ACTIONS::toggleOPCurrents.MakeEvent() );
+    Go( &SCH_EDITOR_CONTROL::ToggleSchRatsnest,       SCH_ACTIONS::toggleSchRatsnest.MakeEvent() );
     Go( &SCH_EDITOR_CONTROL::TogglePinAltIcons,       SCH_ACTIONS::togglePinAltIcons.MakeEvent() );
     Go( &SCH_EDITOR_CONTROL::ChangeLineMode,          SCH_ACTIONS::lineModeFree.MakeEvent() );
     Go( &SCH_EDITOR_CONTROL::ChangeLineMode,          SCH_ACTIONS::lineMode90.MakeEvent() );

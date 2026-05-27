@@ -1346,6 +1346,13 @@ TOOL_ACTION SCH_ACTIONS::toggleOPCurrents( TOOL_ACTION_ARGS()
         .Tooltip( _( "Show operating point current data from simulation" ) )
         .ToolbarState( TOOLBAR_STATE::TOGGLE ) );
 
+TOOL_ACTION SCH_ACTIONS::toggleSchRatsnest( TOOL_ACTION_ARGS()
+        .Name( "eeschema.EditorControl.showSchematicRatsnest" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Show Schematic Ratsnest" ) )
+        .Tooltip( _( "Show ratsnest lines connecting unrouted nets across the schematic" ) )
+        .ToolbarState( TOOLBAR_STATE::TOGGLE ) );
+
 TOOL_ACTION SCH_ACTIONS::togglePinAltIcons( TOOL_ACTION_ARGS()
         .Name( "eeschema.EditorControl.togglePinAltIcons" )
         .Scope( AS_GLOBAL )
