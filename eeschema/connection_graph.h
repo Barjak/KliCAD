@@ -798,6 +798,18 @@ private:
     int ercCheckSingleGlobalLabel();
 
     /**
+     * Check that every bus-syntax sheet pin on a repeated (repeat_count > 1) sheet has a bus
+     * width that exactly matches the sheet's repeat_count.
+     *
+     * Multi-channel sheets fan out each bit of a bus pin to one synthetic-clone slot
+     * (see propagateToNeighbors / repeatBusPinBitName); a mismatch between bus width and
+     * repeat_count would silently strand slots, so it is reported as an ERC error.
+     *
+     * @return the number of width-mismatch errors found.
+     */
+    int ercCheckRepeatBusPinWidths();
+
+    /**
      * Get the number of pins in a given subgraph.
      *
      * @param aLocSubgraph Subgraph to search
