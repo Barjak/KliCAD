@@ -46,6 +46,8 @@
 #include <sch_line.h>
 #include <sch_marker.h>
 #include <sch_no_connect.h>
+#include <sch_ratsnest_builder.h>
+#include <sch_ratsnest_item.h>
 #include <sch_rule_area.h>
 #include <sch_screen.h>
 #include <sch_sheet_pin.h>
@@ -2074,6 +2076,15 @@ void SCHEMATIC::RecalculateConnections( SCH_COMMIT* aCommit, SCH_CLEANUP_FLAGS a
         new_graph.Recalculate( list, false, aChangedItemHandler, aProgressReporter );
         ConnectionGraph()->Merge( new_graph );
     }
+
+    // M1.4: refresh the schematic ratsnest view-item from the freshly
+    // rebuilt connection graph.  Lazily created so SCHEMATICs that never
+    // hit RecalculateConnections (e.g. throwaway loader instances) don't
+    // allocate the item.  BuildFrom calls ClearEdges() internally.
+    if( !m_ratsnest )
+        m_ratsnest = std::make_unique<SCH_RATSNEST_ITEM>();
+
+    SCH_RATSNEST_BUILDER::BuildFrom( *m_connectionGraph, *m_ratsnest );
 
     if( !localCommit.Empty() )
         localCommit.Push( _( "Schematic Cleanup" ) );
