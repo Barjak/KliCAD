@@ -414,6 +414,8 @@ set( EESCHEMA_SRCS
     sch_pin.cpp
     sch_plotter.cpp
     sch_preview_panel.cpp
+    sch_ratsnest_builder.cpp
+    sch_ratsnest_item.cpp
     sch_reference_list.cpp
     sch_render_settings.cpp
     sch_screen.cpp
@@ -638,7 +640,8 @@ target_link_libraries( eeschema_kiface_objects
     PUBLIC
         common
         pads_common
-        pcm )
+        pcm
+        delaunator )
 
 # Since we're not using target_link_libraries, we need to explicitly
 # declare the dependency

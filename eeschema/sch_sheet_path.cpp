@@ -292,6 +292,48 @@ SCH_SCREEN* SCH_SHEET_PATH::LastScreen() const
 }
 
 
+int SCH_SHEET_PATH::GetSlotIndex() const
+{
+    SCH_SHEET* last = Last();
+
+    if( !last )
+        return -1;
+
+    if( last->IsSynthetic() )
+    {
+        // Slots 1..N-1: the clone's m_Uuid is one of the template's
+        // m_repeatInstances entries (position k-1 in the vector
+        // corresponds to slot k).
+        SCH_SHEET* tmpl = last->GetTemplate();
+
+        if( !tmpl )
+            return -1;
+
+        const std::vector<KIID>& slots = tmpl->GetRepeatInstances();
+
+        for( size_t k = 0; k < slots.size(); ++k )
+        {
+            if( slots[k] == last->m_Uuid )
+                return static_cast<int>( k ) + 1;
+        }
+
+        // Synthetic clone whose KIID is not on its template's instance
+        // list — data corruption (e.g. template shrunk after the clone
+        // was minted but the cache wasn't cleared).  Not a legal state
+        // post-R2 RefreshHierarchy; surface as "not in expansion".
+        return -1;
+    }
+
+    // Non-synthetic last segment.  Slot 0 of a multi-channel expansion
+    // is the on-canvas template itself; for single-instance sheets
+    // there is no expansion.
+    if( last->GetRepeatCount() > 1 )
+        return 0;
+
+    return -1;
+}
+
+
 bool SCH_SHEET_PATH::GetExcludedFromSim() const
 {
     for( SCH_SHEET* sheet : m_sheets )
@@ -492,10 +534,36 @@ wxString SCH_SHEET_PATH::PathHumanReadable( bool aUseShortRootName,
     // Start at startIdx + 1 since we've already processed the root sheet.
     for( unsigned i = startIdx + 1; i < size(); i++ )
     {
-        wxString sheetName = at( i )->GetField( FIELD_T::SHEET_NAME )->GetShownText( false );
+        SCH_SHEET* segment = at( i );
+        wxString   sheetName = segment->GetField( FIELD_T::SHEET_NAME )->GetShownText( false );
 
         if( aEscapeSheetNames )
             sheetName = EscapeString( sheetName, CTX_NETNAME );
+
+        // Multi-channel disambiguation: synthetic clones share the
+        // template's SHEET_NAME field, so the bare sheet name collides
+        // across slots (e.g. /Channel/ for all N clones).  Append the
+        // slot index (1..N-1) to make the human-readable path unique
+        // per slot.  Slot 0 (the on-canvas template) is left as-is to
+        // preserve today's output for non-multi-channel hierarchies.
+        if( segment->IsSynthetic() )
+        {
+            SCH_SHEET* tmpl = segment->GetTemplate();
+
+            if( tmpl )
+            {
+                const std::vector<KIID>& slots = tmpl->GetRepeatInstances();
+
+                for( size_t k = 0; k < slots.size(); ++k )
+                {
+                    if( slots[k] == segment->m_Uuid )
+                    {
+                        sheetName << wxS( ":" ) << ( static_cast<int>( k ) + 1 );
+                        break;
+                    }
+                }
+            }
+        }
 
         s << sheetName << wxS( "/" );
     }

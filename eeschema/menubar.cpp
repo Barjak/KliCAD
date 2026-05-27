@@ -225,6 +225,7 @@ void SCH_EDIT_FRAME::doReCreateMenuBar()
     viewMenu->Add( SCH_ACTIONS::markSimExclusions,     ACTION_MENU::CHECK );
     viewMenu->Add( SCH_ACTIONS::toggleOPVoltages,      ACTION_MENU::CHECK );
     viewMenu->Add( SCH_ACTIONS::toggleOPCurrents,      ACTION_MENU::CHECK );
+    viewMenu->Add( SCH_ACTIONS::toggleSchRatsnest,     ACTION_MENU::CHECK );
     viewMenu->Add( SCH_ACTIONS::togglePinAltIcons,     ACTION_MENU::CHECK );
 
 #ifdef __APPLE__

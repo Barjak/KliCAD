@@ -1150,7 +1150,9 @@ py::object sch_state_add_sheet(
         const std::string& name,
         const std::string& filename,
         double x_mm, double y_mm,
-        double w_mm, double h_mm )
+        double w_mm, double h_mm,
+        int repeat_count,
+        const std::vector<std::string>& repeat_instances )
 {
     SCH_EDIT_FRAME* frame         = require_sch_edit_frame();
     SCHEMATIC&      sch           = frame->Schematic();
@@ -1167,6 +1169,24 @@ py::object sch_state_add_sheet(
     sheet->SetName( wxString::FromUTF8( name.c_str() ) );
     wxString fn = wxString::FromUTF8( filename.c_str() );
     sheet->SetFileName( fn );
+
+    // R1 multi-instance ("repeat") plumbing: when repeat_count > 1, the
+    // SCH_SHEET represents N hierarchy slots sharing a single SCH_SCREEN.
+    // Slot 0 is the sheet's own m_Uuid; slots 1..N-1 take KIIDs from
+    // repeat_instances (parsed from caller-supplied UUID strings).  For
+    // defaults (count == 1, empty list) this is a no-op vs. the old
+    // single-instance behavior.
+    if( repeat_count > 1 )
+        sheet->SetRepeatCount( repeat_count );
+
+    if( !repeat_instances.empty() )
+    {
+        std::vector<KIID> kiids;
+        kiids.reserve( repeat_instances.size() );
+        for( const std::string& s : repeat_instances )
+            kiids.emplace_back( wxString::FromUTF8( s.c_str() ) );
+        sheet->SetRepeatInstances( kiids );
+    }
 
     // Screen-sharing for multi-instance Sub-Circuits: if another SCH_SHEET
     // in the hierarchy already points at the same .kicad_sch filename,
@@ -1569,6 +1589,8 @@ Returns {ok: True, removed: int}.
            py::arg( "name" ), py::arg( "filename" ),
            py::arg( "x_mm" ), py::arg( "y_mm" ),
            py::arg( "w_mm" ), py::arg( "h_mm" ),
+           py::arg( "repeat_count" )     = 1,
+           py::arg( "repeat_instances" ) = std::vector<std::string>{},
            R"DOC(Place a SCH_SHEET on the current sheet.
 
 A fresh empty SCH_SCREEN is created and attached so subsequent
@@ -1576,6 +1598,12 @@ set_current_sheet + add_symbol calls populate the child sheet's
 content.  The Python side is responsible for laying down the
 corresponding child .kicad_sch stub on disk; save_schematic
 overwrites it with the in-memory screen.
+
+repeat_count:     R1 multi-instance count (default 1).  Values > 1 make
+                  this SCH_SHEET represent N hierarchy slots sharing the
+                  same SCH_SCREEN.
+repeat_instances: KIID strings for slots 1..N-1 (slot 0 is the sheet's
+                  own m_Uuid).  Default empty (single-instance sheet).
 
 Returns {ok, kiid, name, file_name}.
 )DOC" );

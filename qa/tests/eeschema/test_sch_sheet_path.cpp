@@ -224,4 +224,201 @@ BOOST_AUTO_TEST_CASE( PathHumanReadableWithSlashes )
 }
 
 
+/**
+ * Test SCH_SHEET_PATH::GetSlotIndex() — derive the multi-channel slot
+ * of the path's last segment.  Three scenarios required by R3.2:
+ *
+ *   (a) non-repeated parent → -1
+ *   (b) template in a repeated parent → 0
+ *   (c) synthetic clone at slot K → K
+ *
+ * We also cover the data-corruption guard (synthetic clone whose KIID
+ * is absent from the template's instance list) and the empty-path
+ * sentinel.  All paths are assembled by hand — no SCHEMATIC walk —
+ * because GetSlotIndex() is a pure structural helper.
+ */
+BOOST_AUTO_TEST_CASE( GetSlotIndex )
+{
+    // (a) Empty path — sentinel.
+    BOOST_CHECK_EQUAL( m_empty_path.GetSlotIndex(), -1 );
+
+    // (a) Non-repeated parent — the m_linear fixture has repeat_count
+    // == 1 (default) on every sheet, so Last() is a vanilla
+    // single-instance sheet.
+    BOOST_CHECK_EQUAL( m_linear.GetSlotIndex(), -1 );
+
+    // Build a small parent/template/clone graph for (b) and (c).
+    //
+    //   parent (repeat=1)
+    //     └─ template  (repeat=4)   ← slot 0
+    //         ├─ clone1 m_Uuid=K1   ← slot 1
+    //         ├─ clone2 m_Uuid=K2   ← slot 2
+    //         └─ clone3 m_Uuid=K3   ← slot 3
+    //
+    // The template's GetRepeatInstances() holds [K1, K2, K3].
+    SCH_SHEET parent( nullptr, VECTOR2I( 0, 0 ) );
+    parent.GetField( FIELD_T::SHEET_NAME )->SetText( "Parent" );
+
+    SCH_SHEET tmpl( nullptr, VECTOR2I( 1, 1 ) );
+    tmpl.GetField( FIELD_T::SHEET_NAME )->SetText( "Channel" );
+    tmpl.SetRepeatCount( 4 );
+
+    const KIID k1, k2, k3;
+    tmpl.SetRepeatInstances( { k1, k2, k3 } );
+
+    // Synthetic clones for slots 1..3 — emulate what MintRepeatClone
+    // does (override m_Uuid, MarkSynthetic with the template).
+    SCH_SHEET clone1( tmpl );
+    const_cast<KIID&>( clone1.m_Uuid ) = k1;
+    clone1.MarkSynthetic( &tmpl );
+
+    SCH_SHEET clone2( tmpl );
+    const_cast<KIID&>( clone2.m_Uuid ) = k2;
+    clone2.MarkSynthetic( &tmpl );
+
+    SCH_SHEET clone3( tmpl );
+    const_cast<KIID&>( clone3.m_Uuid ) = k3;
+    clone3.MarkSynthetic( &tmpl );
+
+    // (b) Template in a repeated parent → slot 0.
+    SCH_SHEET_PATH slot0;
+    slot0.push_back( &parent );
+    slot0.push_back( &tmpl );
+    BOOST_CHECK_EQUAL( slot0.GetSlotIndex(), 0 );
+
+    // (c) Synthetic clone at slot K → K.
+    SCH_SHEET_PATH slot1;
+    slot1.push_back( &parent );
+    slot1.push_back( &clone1 );
+    BOOST_CHECK_EQUAL( slot1.GetSlotIndex(), 1 );
+
+    SCH_SHEET_PATH slot2;
+    slot2.push_back( &parent );
+    slot2.push_back( &clone2 );
+    BOOST_CHECK_EQUAL( slot2.GetSlotIndex(), 2 );
+
+    SCH_SHEET_PATH slot3;
+    slot3.push_back( &parent );
+    slot3.push_back( &clone3 );
+    BOOST_CHECK_EQUAL( slot3.GetSlotIndex(), 3 );
+
+    // Data-corruption guard — a synthetic clone whose KIID is NOT on
+    // its template's instance list.  GetSlotIndex returns -1 rather
+    // than crashing or returning a phantom slot.
+    SCH_SHEET orphan( tmpl );
+    const KIID strayKiid;
+    const_cast<KIID&>( orphan.m_Uuid ) = strayKiid;
+    orphan.MarkSynthetic( &tmpl );
+
+    SCH_SHEET_PATH orphanPath;
+    orphanPath.push_back( &parent );
+    orphanPath.push_back( &orphan );
+    BOOST_CHECK_EQUAL( orphanPath.GetSlotIndex(), -1 );
+
+    // Non-synthetic, non-repeated sheet (repeat_count==1) directly
+    // under a parent — still -1 (single instance, no expansion).
+    SCH_SHEET plain( nullptr, VECTOR2I( 2, 2 ) );
+    plain.GetField( FIELD_T::SHEET_NAME )->SetText( "Plain" );
+
+    SCH_SHEET_PATH plainPath;
+    plainPath.push_back( &parent );
+    plainPath.push_back( &plain );
+    BOOST_CHECK_EQUAL( plainPath.GetSlotIndex(), -1 );
+}
+
+
+/**
+ * F1: PathHumanReadable must append a `:K` slot suffix when a segment
+ * is a synthetic clone (K = the clone's slot index, 1..N-1).  Without
+ * this disambiguation, all clones of the same template share their
+ * parent's SHEET_NAME field and produce identical human-readable
+ * paths, which downstream collapses N PCB channels onto one rule
+ * area.  The template itself (slot 0) stays un-suffixed so existing
+ * single-instance hierarchies are unaffected.
+ */
+BOOST_AUTO_TEST_CASE( PathHumanReadableSyntheticSlotSuffix )
+{
+    // parent (repeat=1)
+    //   └─ template "Channel" (repeat=4)   ← slot 0, no suffix
+    //       ├─ clone1 KIID=k1              ← slot 1 → "Channel:1"
+    //       ├─ clone2 KIID=k2              ← slot 2 → "Channel:2"
+    //       └─ clone3 KIID=k3              ← slot 3 → "Channel:3"
+    SCH_SHEET parent( nullptr, VECTOR2I( 0, 0 ) );
+    parent.GetField( FIELD_T::SHEET_NAME )->SetText( "Parent" );
+    parent.SetParent( &m_schematic );
+
+    SCH_SHEET tmpl( nullptr, VECTOR2I( 1, 1 ) );
+    tmpl.GetField( FIELD_T::SHEET_NAME )->SetText( "Channel" );
+    tmpl.SetRepeatCount( 4 );
+    tmpl.SetParent( &m_schematic );
+
+    const KIID k1, k2, k3;
+    tmpl.SetRepeatInstances( { k1, k2, k3 } );
+
+    SCH_SHEET clone1( tmpl );
+    const_cast<KIID&>( clone1.m_Uuid ) = k1;
+    clone1.MarkSynthetic( &tmpl );
+    clone1.SetParent( &m_schematic );
+
+    SCH_SHEET clone2( tmpl );
+    const_cast<KIID&>( clone2.m_Uuid ) = k2;
+    clone2.MarkSynthetic( &tmpl );
+    clone2.SetParent( &m_schematic );
+
+    SCH_SHEET clone3( tmpl );
+    const_cast<KIID&>( clone3.m_Uuid ) = k3;
+    clone3.MarkSynthetic( &tmpl );
+    clone3.SetParent( &m_schematic );
+
+    // Slot 0: the template itself — no suffix (preserves the
+    // behavior for single-instance hierarchies, which are
+    // structurally non-synthetic).
+    SCH_SHEET_PATH slot0;
+    slot0.push_back( &parent );
+    slot0.push_back( &tmpl );
+    BOOST_CHECK_EQUAL( slot0.PathHumanReadable( true, false, false ), "/Channel/" );
+
+    // Slots 1..N-1: synthetic clones — `:K` suffix on the clone's
+    // own segment.  The parent segment remains untouched (parent is
+    // not synthetic).
+    SCH_SHEET_PATH slot1;
+    slot1.push_back( &parent );
+    slot1.push_back( &clone1 );
+    BOOST_CHECK_EQUAL( slot1.PathHumanReadable( true, false, false ), "/Channel:1/" );
+
+    SCH_SHEET_PATH slot2;
+    slot2.push_back( &parent );
+    slot2.push_back( &clone2 );
+    BOOST_CHECK_EQUAL( slot2.PathHumanReadable( true, false, false ), "/Channel:2/" );
+
+    SCH_SHEET_PATH slot3;
+    slot3.push_back( &parent );
+    slot3.push_back( &clone3 );
+    BOOST_CHECK_EQUAL( slot3.PathHumanReadable( true, false, false ), "/Channel:3/" );
+
+    // Trailing-separator stripping still works with the suffix.
+    BOOST_CHECK_EQUAL( slot2.PathHumanReadable( true, true, false ), "/Channel:2" );
+
+    // Non-multi-channel hierarchies are untouched: m_linear's
+    // segments are all repeat_count==1, non-synthetic, so the
+    // output matches the pre-F1 baseline.
+    BOOST_CHECK_EQUAL( m_linear.PathHumanReadable(), "/Sheet1/Sheet2/" );
+
+    // Data-corruption guard — a synthetic clone whose KIID is NOT on
+    // the template's instance list emits the bare name with no
+    // suffix (matches GetSlotIndex's -1 sentinel; safer than
+    // fabricating a slot number).
+    SCH_SHEET orphan( tmpl );
+    const KIID strayKiid;
+    const_cast<KIID&>( orphan.m_Uuid ) = strayKiid;
+    orphan.MarkSynthetic( &tmpl );
+    orphan.SetParent( &m_schematic );
+
+    SCH_SHEET_PATH orphanPath;
+    orphanPath.push_back( &parent );
+    orphanPath.push_back( &orphan );
+    BOOST_CHECK_EQUAL( orphanPath.PathHumanReadable( true, false, false ), "/Channel/" );
+}
+
+
 BOOST_AUTO_TEST_SUITE_END()

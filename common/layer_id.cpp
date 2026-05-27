@@ -118,6 +118,7 @@ wxString LayerName( int aLayer )
     case LAYER_SCHEMATIC_PAGE_LIMITS:   return _( "Page limits" );
     case LAYER_OP_VOLTAGES:             return _( "Operating point voltages" );
     case LAYER_OP_CURRENTS:             return _( "Operating point currents" );
+    case LAYER_SCH_RATSNEST:            return _( "Schematic ratsnest" );
 
     // GAL_LAYER_ID
 

@@ -2880,6 +2880,109 @@ void CONNECTION_GRAPH::assignNetCodesToBus( SCH_CONNECTION* aConnection )
 }
 
 
+/**
+ * Resolve which SCH_SHEET to push onto @a aPath when descending via a
+ * hierarchical pin whose owning sheet is @a aPinParent.
+ *
+ * For multi-channel (repeat_count > 1) sheets, BuildSheetList materialises
+ * N synthetic-clone SCH_SHEET children sharing the template's screen, each
+ * with a distinct slot KIID (see SCH_SHEET::IsSynthetic / GetTemplate,
+ * landed in Phase R1).  A hierarchical sheet pin always lives on the
+ * on-canvas template SCH_SHEET — clones are never inserted into any
+ * screen's items list — so a naive `path.push_back( pin->GetParent() )`
+ * always pushes the template, collapsing all N slot contexts to slot 0.
+ *
+ * When the path being extended already ends in a synthetic clone whose
+ * GetTemplate() matches @a aPinParent, the correct slot identity is the
+ * clone itself.  In that case return the clone so the resulting path
+ * preserves the per-slot KIID that downstream lookups (e.g. the
+ * sheet-to-subgraphs map) key on.
+ *
+ * Non-multi-channel schematics never hit the synthetic-clone branch and
+ * receive @a aPinParent unchanged, preserving pre-R1 behavior.
+ *
+ * Concern F' of the Phase R2 audit
+ * (~/projects/klicad-python/docs/plans/multi-channel-r2-audit.md).
+ */
+static SCH_SHEET* resolveHierPinPushTarget( const SCH_SHEET_PATH& aPath,
+                                            SCH_SHEET* aPinParent )
+{
+    if( aPath.size() > 0 && aPinParent )
+    {
+        SCH_SHEET* last = aPath.Last();
+
+        if( last && last->IsSynthetic() && last->GetTemplate() == aPinParent )
+            return last;
+    }
+
+    return aPinParent;
+}
+
+
+/**
+ * Bus-pin bit fan-out at the hier-pin connection site (Phase R3.3).
+ *
+ * When a hier-pin lives on a multi-channel sheet (repeat_count > 1) and the
+ * pin's name is bus-syntax (e.g. "DATA[0..3]") whose width equals the sheet's
+ * repeat_count, the body-side scalar binding for slot K is bit K of the
+ * parent's bus.  This helper returns the bit-K scalar name (escaped for net
+ * lookup) for a path that already ends in the slot's SCH_SHEET, or empty when
+ * fan-out is not applicable.
+ *
+ * Width mismatches and non-bus pins return empty; in that case the caller
+ * falls back to the pre-R3.3 behavior (full bus / scalar comparison).  Width
+ * mismatch is reported separately by ercCheckRepeatBusPinWidths so the
+ * propagation step stays silent on every graph rebuild.
+ *
+ * Scalar pins on repeated sheets are left untouched (shared across all
+ * slots) — only bus pins fan out per slot.
+ *
+ * @param aPath  Path that has already had the slot's SCH_SHEET pushed onto
+ *               it (i.e. aPath.Last() is the synthetic clone for slot K or
+ *               the on-canvas template for slot 0).
+ * @param aPin   The hierarchical sheet pin whose effective bit name is
+ *               wanted; the pin always lives on the on-canvas template
+ *               (clones are never inserted into any screen).
+ * @return       The bit-K scalar name (e.g. "DATA1") on success, or an empty
+ *               string when no fan-out applies.
+ */
+static wxString repeatBusPinBitName( const SCH_SHEET_PATH& aPath, SCH_SHEET_PIN* aPin )
+{
+    if( !aPin )
+        return wxEmptyString;
+
+    SCH_SHEET* tmpl = aPin->GetParent();
+
+    if( !tmpl || tmpl->GetRepeatCount() <= 1 )
+        return wxEmptyString;
+
+    int slot = aPath.GetSlotIndex();
+
+    if( slot < 0 )
+        return wxEmptyString;
+
+    // Pin name as authored on the sheet (unescaped form expected by
+    // ParseBusVector); GetShownText resolves any text variables, mirroring
+    // the path used by CONNECTION_SUBGRAPH::driverName for SCH_SHEET_PIN_T.
+    SCH_SHEET_PATH pinPath = aPath;
+    wxString pinText = aPin->GetShownText( &pinPath, false );
+
+    wxString prefix;
+    std::vector<wxString> members;
+
+    if( !NET_SETTINGS::ParseBusVector( pinText, &prefix, &members ) )
+        return wxEmptyString;
+
+    if( static_cast<int>( members.size() ) != tmpl->GetRepeatCount() )
+        return wxEmptyString;  // Width mismatch — ERC reports it separately.
+
+    if( slot < 0 || slot >= static_cast<int>( members.size() ) )
+        return wxEmptyString;
+
+    return EscapeString( members[ static_cast<size_t>( slot ) ], CTX_NETNAME );
+}
+
+
 void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, bool aForce )
 {
     SCH_CONNECTION* conn = aSubgraph->m_driver_connection;
@@ -2892,12 +2995,22 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
         for( SCH_SHEET_PIN* pin : aParent->m_hier_pins )
         {
             SCH_SHEET_PATH path = aParent->m_sheet;
-            path.push_back( pin->GetParent() );
+            path.push_back( resolveHierPinPushTarget( aParent->m_sheet,
+                                                     pin->GetParent() ) );
 
             auto it = m_sheet_to_subgraphs_map.find( path );
 
             if( it == m_sheet_to_subgraphs_map.end() )
                 continue;
+
+            // Phase R3.3: a bus-syntax sheet pin on a multi-channel (repeat>1)
+            // sheet fans out one bit per slot; on slot K the body-side scalar
+            // binding for the pin is bit K of the parent's bus.  When the
+            // helper returns a non-empty bit name, we match the child's scalar
+            // hier-label against it instead of the full bus pin name.
+            const wxString bitName = repeatBusPinBitName( path, pin );
+            const wxString pinName = bitName.IsEmpty() ? aParent->GetNameForDriver( pin )
+                                                       : bitName;
 
             for( CONNECTION_SUBGRAPH* candidate : it->second )
             {
@@ -2910,7 +3023,7 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
 
                 for( SCH_HIERLABEL* label : candidate->m_hier_ports )
                 {
-                    if( candidate->GetNameForDriver( label ) == aParent->GetNameForDriver( pin ) )
+                    if( candidate->GetNameForDriver( label ) == pinName )
                     {
                         wxLogTrace( ConnTrace, wxS( "%lu: found child %lu (%s)" ), aParent->m_code,
                                     candidate->m_code, candidate->m_driver_connection->Name() );
@@ -2948,21 +3061,34 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
                     continue;
                 }
 
-                const KIID& last_parent_uuid = aParent->m_sheet.Last()->m_Uuid;
-
                 for( SCH_SHEET_PIN* pin : candidate->m_hier_pins )
                 {
-                    // If the last sheet UUIDs won't match, no need to check the full path
-                    if( pin->GetParent()->m_Uuid != last_parent_uuid )
-                        continue;
-
+                    // Phase R3.3.1: the previous KIID prefilter compared
+                    // pin->GetParent()->m_Uuid (always the on-canvas template)
+                    // against aParent->m_sheet.Last()->m_Uuid (the clone's KIID
+                    // for synthetic-clone slot paths), incorrectly rejecting
+                    // all pins on clone-slot paths and preventing the bitName
+                    // fan-out below from running in the reverse direction.
+                    // The path-equality check that follows is the real
+                    // correctness gate, so drop the prefilter.
                     SCH_SHEET_PATH pin_path = path;
-                    pin_path.push_back( pin->GetParent() );
+                    SCH_SHEET* pushTarget = resolveHierPinPushTarget( aParent->m_sheet, pin->GetParent() );
+                    pin_path.push_back( pushTarget );
 
                     if( pin_path != aParent->m_sheet )
                         continue;
 
-                    if( aParent->GetNameForDriver( label ) == candidate->GetNameForDriver( pin ) )
+                    // Phase R3.3: mirror the bus-pin bit fan-out in the
+                    // reverse-direction (child-port -> parent-pin) match so a
+                    // body-side scalar hier-label on slot K can attach to its
+                    // parent's bus pin.
+                    const wxString bitName =
+                            repeatBusPinBitName( aParent->m_sheet, pin );
+                    const wxString pinName = bitName.IsEmpty()
+                                                     ? candidate->GetNameForDriver( pin )
+                                                     : bitName;
+
+                    if( aParent->GetNameForDriver( label ) == pinName )
                     {
                         wxLogTrace( ConnTrace, wxS( "%lu: found additional parent %lu (%s)" ),
                                     aParent->m_code, candidate->m_code, candidate->m_driver_connection->Name() );
@@ -3658,6 +3784,16 @@ int CONNECTION_GRAPH::RunERC()
     if( settings.IsTestEnabled( ERCE_SINGLE_GLOBAL_LABEL ) )
     {
         error_count += ercCheckSingleGlobalLabel();
+    }
+
+    // Multi-channel sheets (repeat_count > 1) require bus sheet pins whose
+    // width matches the repeat count; mismatches silently strand slots, so
+    // they are reported here so the same machinery (markers, dialog filters)
+    // surfaces them.  Gated on the generic-error category so users can
+    // suppress it like other ERC checks.
+    if( settings.IsTestEnabled( ERCE_GENERIC_ERROR ) )
+    {
+        error_count += ercCheckRepeatBusPinWidths();
     }
 
     return error_count;
@@ -4567,6 +4703,85 @@ int CONNECTION_GRAPH::ercCheckSingleGlobalLabel()
 
             SCH_MARKER* marker = new SCH_MARKER( std::move( ercItem ), item->GetPosition() );
             sheet.LastScreen()->Append( marker );
+
+            errors++;
+        }
+    }
+
+    return errors;
+}
+
+
+int CONNECTION_GRAPH::ercCheckRepeatBusPinWidths()
+{
+    int errors = 0;
+
+    // Visit each user-placed (template) sheet at most once: synthetic clones
+    // share the template's SCH_SCREEN and pin set, so reporting per slot
+    // would duplicate every marker N times.
+    std::set<SCH_SHEET*> visitedTemplates;
+
+    for( const SCH_SHEET_PATH& sheet : m_sheetList )
+    {
+        SCH_SHEET* last = sheet.Last();
+
+        if( !last )
+            continue;
+
+        SCH_SHEET* tmpl = last->GetTemplate();
+
+        if( !tmpl || tmpl->GetRepeatCount() <= 1 )
+            continue;
+
+        if( !visitedTemplates.insert( tmpl ).second )
+            continue;
+
+        // The sheet pin is drawn on the parent sheet (the one containing
+        // the SCH_SHEET that owns the pin), so the marker belongs on the
+        // parent screen.  Pin name resolution likewise uses the parent
+        // path.  m_sheetList always includes a path ending in the slot's
+        // sheet, so popping that last segment yields the parent path
+        // (possibly empty for a top-level repeated sheet, which is not a
+        // legal multi-channel configuration today but we tolerate it by
+        // falling back to the slot's own screen).
+        SCH_SHEET_PATH parentPath = sheet;
+        parentPath.pop_back();
+
+        SCH_SCREEN* parentScreen = parentPath.size() > 0 ? parentPath.LastScreen()
+                                                         : sheet.LastScreen();
+
+        if( !parentScreen )
+            continue;
+
+        for( SCH_SHEET_PIN* pin : tmpl->GetPins() )
+        {
+            if( !pin )
+                continue;
+
+            wxString pinText = pin->GetShownText( &sheet, false );
+
+            wxString prefix;
+            std::vector<wxString> members;
+
+            if( !NET_SETTINGS::ParseBusVector( pinText, &prefix, &members ) )
+                continue;  // Scalar pins are shared across slots — no width rule.
+
+            if( static_cast<int>( members.size() ) == tmpl->GetRepeatCount() )
+                continue;
+
+            wxString msg = wxString::Format(
+                    _( "Bus sheet pin '%s' has width %zu but its sheet has repeat_count %d; "
+                       "the two must match for multi-channel bus fan-out." ),
+                    pinText, members.size(), tmpl->GetRepeatCount() );
+
+            std::shared_ptr<ERC_ITEM> ercItem = ERC_ITEM::Create( ERCE_GENERIC_ERROR );
+            ercItem->SetItems( pin );
+            ercItem->SetSheetSpecificPath( parentPath );
+            ercItem->SetItemsSheetPaths( parentPath );
+            ercItem->SetErrorMessage( msg );
+
+            SCH_MARKER* marker = new SCH_MARKER( std::move( ercItem ), pin->GetPosition() );
+            parentScreen->Append( marker );
 
             errors++;
         }

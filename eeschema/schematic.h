@@ -41,6 +41,7 @@ class SCH_SHEET;
 class SCH_SHEET_LIST;
 class SCH_GLOBALLABEL;
 class SCH_REFERENCE;
+class SCH_RATSNEST_ITEM;
 class PROGRESS_REPORTER;
 class TOOL_MANAGER;
 class PICKED_ITEMS_LIST;
@@ -225,6 +226,17 @@ public:
     CONNECTION_GRAPH* ConnectionGraph() const
     {
         return m_connectionGraph;
+    }
+
+    /**
+     * Return the schematic ratsnest view-item, or nullptr if connectivity has
+     * not yet been calculated.  The returned object is owned by the
+     * SCHEMATIC; its edge list is rebuilt at the end of every successful
+     * RecalculateConnections call (M1.4 refresh hook).
+     */
+    SCH_RATSNEST_ITEM* GetRatsnestItem() const
+    {
+        return m_ratsnest.get();
     }
 
     SCHEMATIC_SETTINGS& Settings() const;
@@ -603,6 +615,16 @@ private:
 
     /// Hold and calculate connectivity information of this schematic.
     CONNECTION_GRAPH* m_connectionGraph;
+
+    /**
+     * Schematic ratsnest view-item, populated by SCH_RATSNEST_BUILDER::BuildFrom
+     * at the end of every successful RecalculateConnections (M1.4 refresh hook).
+     *
+     * Lazily created on first refresh.  Mutable because it is rebuilt as a
+     * derived view of the connection graph; structurally it is a cache of the
+     * connectivity state, not part of the schematic's persistent data model.
+     */
+    mutable std::unique_ptr<SCH_RATSNEST_ITEM> m_ratsnest;
 
     /**
      * Holds a map of labels to the page sequence (virtual page number) that they appear on.

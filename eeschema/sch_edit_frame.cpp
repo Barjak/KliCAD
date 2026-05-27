@@ -435,6 +435,7 @@ SCH_EDIT_FRAME::SCH_EDIT_FRAME( KIWAY* aKiway, wxWindow* aParent ) :
     view->SetLayerVisible( LAYER_ERC_EXCLUSION, appearance_cfg.show_erc_exclusions );
     view->SetLayerVisible( LAYER_OP_VOLTAGES, appearance_cfg.show_op_voltages );
     view->SetLayerVisible( LAYER_OP_CURRENTS, appearance_cfg.show_op_currents );
+    view->SetLayerVisible( LAYER_SCH_RATSNEST, appearance_cfg.show_sch_ratsnest );
 
     initScreenZoom();
 
@@ -897,6 +898,13 @@ void SCH_EDIT_FRAME::setupUIConditions()
                 return cfg && cfg->m_Appearance.show_op_currents;
             };
 
+    auto showSchRatsnestCond =
+            [this]( const SELECTION& )
+            {
+                EESCHEMA_SETTINGS* cfg = eeconfig();
+                return cfg && cfg->m_Appearance.show_sch_ratsnest;
+            };
+
     auto showPinAltModeIconsCond =
             [this]( const SELECTION& )
             {
@@ -946,6 +954,7 @@ void SCH_EDIT_FRAME::setupUIConditions()
     mgr->SetConditions( SCH_ACTIONS::markSimExclusions,     CHECK( markSimExclusionsCond ) );
     mgr->SetConditions( SCH_ACTIONS::toggleOPVoltages,      CHECK( showOPVoltagesCond ) );
     mgr->SetConditions( SCH_ACTIONS::toggleOPCurrents,      CHECK( showOPCurrentsCond ) );
+    mgr->SetConditions( SCH_ACTIONS::toggleSchRatsnest,     CHECK( showSchRatsnestCond ) );
     mgr->SetConditions( SCH_ACTIONS::togglePinAltIcons,     CHECK( showPinAltModeIconsCond ) );
     mgr->SetConditions( SCH_ACTIONS::toggleAnnotateAuto,    CHECK( showAnnotateAutomaticallyCond ) );
     mgr->SetConditions( ACTIONS::toggleBoundingBoxes,       CHECK( cond.BoundingBoxes() ) );
@@ -1981,6 +1990,7 @@ void SCH_EDIT_FRAME::CommonSettingsChanged( int aFlags )
         view->SetLayerVisible( LAYER_ERC_EXCLUSION, cfg->m_Appearance.show_erc_exclusions );
         view->SetLayerVisible( LAYER_OP_VOLTAGES, cfg->m_Appearance.show_op_voltages );
         view->SetLayerVisible( LAYER_OP_CURRENTS, cfg->m_Appearance.show_op_currents );
+        view->SetLayerVisible( LAYER_SCH_RATSNEST, cfg->m_Appearance.show_sch_ratsnest );
 
         GetRenderSettings()->m_ShowPinAltIcons = cfg->m_Appearance.show_pin_alt_icons;
 

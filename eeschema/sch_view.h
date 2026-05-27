@@ -46,6 +46,7 @@ constexpr double SCH_WORLD_UNIT ( 1e-7 / 0.0254 );
 
 static const int SCH_LAYER_ORDER[] = { LAYER_GP_OVERLAY,
                                        LAYER_SELECT_OVERLAY,
+                                       LAYER_SCH_RATSNEST,
                                        LAYER_ERC_ERR,
                                        LAYER_ERC_WARN,
                                        LAYER_ERC_EXCLUSION,

@@ -228,6 +228,9 @@ EESCHEMA_SETTINGS::EESCHEMA_SETTINGS() :
     m_params.emplace_back( new PARAM<bool>( "appearance.show_op_currents",
             &m_Appearance.show_op_currents, true ) );
 
+    m_params.emplace_back( new PARAM<bool>( "appearance.show_sch_ratsnest",
+            &m_Appearance.show_sch_ratsnest, true ) );
+
     m_params.emplace_back( new PARAM<bool>( "appearance.show_pin_alt_icons",
             &m_Appearance.show_pin_alt_icons, true ) );
 

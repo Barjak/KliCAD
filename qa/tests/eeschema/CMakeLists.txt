@@ -129,6 +129,7 @@ set( QA_EESCHEMA_SRCS
     test_sch_sheet_path.cpp
     test_sch_sheet_list.cpp
     test_repeated_sheet_hierarchy.cpp
+    test_repeated_sheet_busfanout.cpp
     test_sch_symbol.cpp
     test_sch_table.cpp
     test_sch_textbox.cpp

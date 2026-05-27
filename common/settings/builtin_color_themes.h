@@ -79,6 +79,7 @@ static const std::map<int, COLOR4D> s_defaultTheme =
             { LAYER_SCHEMATIC_PAGE_LIMITS,  CSS_COLOR( 181, 181, 181, 1 ) },
             { LAYER_OP_VOLTAGES,            CSS_COLOR( 132, 0,   50,  1 ) },
             { LAYER_OP_CURRENTS,            CSS_COLOR( 224, 0,   12,  1 ) },
+            { LAYER_SCH_RATSNEST,           CSS_COLOR( 128, 128, 128, 0.5 ) },
 
             { LAYER_GERBVIEW_AXES,          CSS_COLOR( 0,   0,   132, 1 ) },
             { LAYER_GERBVIEW_BACKGROUND,    CSS_COLOR( 0,   0,   0,   1 ) },
@@ -361,6 +362,7 @@ static const std::map<int, COLOR4D> s_classicTheme =
             { LAYER_SCHEMATIC_DRAWINGSHEET, COLOR4D( RED ) },
             { LAYER_OP_VOLTAGES,            COLOR4D( DARKMAGENTA ) },
             { LAYER_OP_CURRENTS,            COLOR4D( RED ) },
+            { LAYER_SCH_RATSNEST,           COLOR4D( LIGHTGRAY ).WithAlpha( 0.5 ) },
 
             { LAYER_GERBVIEW_AXES,          COLOR4D( BLUE ) },
             { LAYER_GERBVIEW_BACKGROUND,    COLOR4D( BLACK ) },

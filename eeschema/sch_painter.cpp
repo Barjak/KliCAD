@@ -57,6 +57,7 @@
 #include <sch_text.h>
 #include <sch_textbox.h>
 #include <sch_table.h>
+#include <sch_ratsnest_item.h>
 #include <schematic.h>
 #include <settings/color_settings.h>
 #include <trace_helpers.h>
@@ -219,6 +220,10 @@ void SCH_PAINTER::draw( const EDA_ITEM* aItem, int aLayer, bool aDimmed )
         break;
     case SCH_GROUP_T:
         draw( static_cast<const SCH_GROUP*>( aItem ), aLayer );
+        break;
+    case SCH_RATSNEST_ITEM_T:
+        drawBoundingBox = false;
+        draw( static_cast<const SCH_RATSNEST_ITEM*>( aItem ), aLayer );
         break;
     default:
         return;
@@ -3722,6 +3727,50 @@ void SCH_PAINTER::draw( const SCH_GROUP* aGroup, int aLayer )
 
             KIFONT::FONT::GetFont()->Draw( m_gal, aGroup->GetName(), topLeft + textOffset, attrs,
                                            aGroup->GetFontMetrics() );
+        }
+    }
+}
+
+
+void SCH_PAINTER::draw( const SCH_RATSNEST_ITEM* aRatsnest, int aLayer )
+{
+    // Renders on the dedicated overlay layer added in M1.1.  Skip any other
+    // layer the view dispatches us on (e.g. shadows / dangling / OP).
+    if( aLayer != LAYER_SCH_RATSNEST )
+        return;
+
+    const std::vector<SCH_RATSNEST_EDGE>& edges = aRatsnest->GetEdges();
+
+    if( edges.empty() )
+        return;
+
+    // Thin pen, slightly under the default schematic line so the ratsnest is
+    // visually distinct from real wires.  Honor the alpha already baked into
+    // the LAYER_SCH_RATSNEST color (themes default to alpha ~0.5).
+    COLOR4D color = m_schSettings.GetLayerColor( LAYER_SCH_RATSNEST );
+    int     width = std::max( 1, m_schSettings.GetDefaultPenWidth() / 2 );
+
+    m_gal->SetIsStroke( true );
+    m_gal->SetIsFill( false );
+    m_gal->SetStrokeColor( color );
+    m_gal->SetLineWidth( width );
+
+    for( const SCH_RATSNEST_EDGE& edge : edges )
+    {
+        // Mirror pcbnew's degenerate-edge cross marker so a pin-to-itself
+        // edge (shouldn't happen, but guard anyway) is still visible.
+        if( edge.a == edge.b )
+        {
+            constexpr int CROSS = 200;     // schematic IU; small visual marker
+
+            m_gal->DrawLine( VECTOR2I( edge.a.x - CROSS, edge.a.y - CROSS ),
+                             VECTOR2I( edge.b.x + CROSS, edge.b.y + CROSS ) );
+            m_gal->DrawLine( VECTOR2I( edge.a.x - CROSS, edge.a.y + CROSS ),
+                             VECTOR2I( edge.b.x + CROSS, edge.b.y - CROSS ) );
+        }
+        else
+        {
+            m_gal->DrawLine( edge.a, edge.b );
         }
     }
 }
