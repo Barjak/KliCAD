@@ -33,6 +33,7 @@
 #include <drawing_sheet/ds_proxy_view_item.h>
 #include <tool/tool_manager.h>
 #include <layer_ids.h>
+#include <sch_ratsnest_item.h>
 #include <sch_screen.h>
 #include <schematic.h>
 #include <schematic_text_var_adapter.h>
@@ -163,6 +164,17 @@ void SCH_VIEW::DisplaySheet( const SCH_SCREEN *aScreen )
     }
 
     Add( m_drawingSheet.get() );
+
+    // Ratsnest: register the schematic-wide ratsnest view-item as a permanent
+    // overlay item (parallels pcb_draw_panel_gal.cpp:485-486 for pcbnew).  The
+    // item itself is owned by the SCHEMATIC and its edge list is rebuilt by
+    // the M1.4 refresh hook; here we just hook it into the active VIEW.  The
+    // SCHEMATIC out-lives any individual SCH_VIEW, so we don't take ownership.
+    if( aScreen->Schematic() )
+    {
+        if( SCH_RATSNEST_ITEM* ratsnest = aScreen->Schematic()->GetRatsnestItem() )
+            Add( ratsnest );
+    }
 
     // Reactive title-block repaint: register this proxy with the schematic's
     // text-var tracker. The listener that routes invalidations to VIEW::Update

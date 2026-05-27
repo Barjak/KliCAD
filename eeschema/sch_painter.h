@@ -54,6 +54,7 @@ class SCH_NO_CONNECT;
 class SCH_LINE;
 class SCH_BUS_ENTRY_BASE;
 class SCH_BITMAP;
+class SCH_RATSNEST_ITEM;
 class SCHEMATIC;
 
 namespace KIGFX
@@ -102,6 +103,7 @@ private:
     void draw( const SCH_LINE* aLine, int aLayer );
     void draw( const SCH_BUS_ENTRY_BASE* aEntry, int aLayer );
     void draw( const SCH_GROUP* aGroup, int aLayer );
+    void draw( const SCH_RATSNEST_ITEM* aRatsnest, int aLayer );
 
     void drawPinDanglingIndicator( const SCH_PIN& aPin, const COLOR4D& aColor, bool aDrawingShadows,
                                    bool aBrightened );

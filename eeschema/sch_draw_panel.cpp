@@ -179,6 +179,11 @@ void SCH_DRAW_PANEL::setDefaultLayerDeps()
 
     m_view->SetLayerDisplayOnly( LAYER_NET_COLOR_HIGHLIGHT );
     m_view->SetLayerDisplayOnly( LAYER_DANGLING );
+
+    // Schematic ratsnest (M1.5): overlay, non-selectable, redrawn on demand.
+    // Parallels pcb_draw_panel_gal.cpp:921-922 for pcbnew's LAYER_RATSNEST.
+    m_view->SetLayerTarget( LAYER_SCH_RATSNEST, KIGFX::TARGET_OVERLAY );
+    m_view->SetLayerDisplayOnly( LAYER_SCH_RATSNEST );
 }
 
 
