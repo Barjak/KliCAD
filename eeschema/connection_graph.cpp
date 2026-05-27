@@ -3061,14 +3061,16 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
                     continue;
                 }
 
-                const KIID& last_parent_uuid = aParent->m_sheet.Last()->m_Uuid;
-
                 for( SCH_SHEET_PIN* pin : candidate->m_hier_pins )
                 {
-                    // If the last sheet UUIDs won't match, no need to check the full path
-                    if( pin->GetParent()->m_Uuid != last_parent_uuid )
-                        continue;
-
+                    // Phase R3.3.1: the previous KIID prefilter compared
+                    // pin->GetParent()->m_Uuid (always the on-canvas template)
+                    // against aParent->m_sheet.Last()->m_Uuid (the clone's KIID
+                    // for synthetic-clone slot paths), incorrectly rejecting
+                    // all pins on clone-slot paths and preventing the bitName
+                    // fan-out below from running in the reverse direction.
+                    // The path-equality check that follows is the real
+                    // correctness gate, so drop the prefilter.
                     SCH_SHEET_PATH pin_path = path;
                     pin_path.push_back( pin->GetParent() );
 
