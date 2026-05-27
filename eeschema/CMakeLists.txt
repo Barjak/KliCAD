@@ -640,7 +640,8 @@ target_link_libraries( eeschema_kiface_objects
     PUBLIC
         common
         pads_common
-        pcm )
+        pcm
+        delaunator )
 
 # Since we're not using target_link_libraries, we need to explicitly
 # declare the dependency
