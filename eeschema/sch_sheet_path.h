@@ -367,6 +367,33 @@ public:
     ///< @copydoc SCH_SHEET_PATH::LastScreen()
     SCH_SCREEN* LastScreen() const;
 
+    /**
+     * Derive the multi-channel slot index of this path's last segment.
+     *
+     * A SCH_SHEET configured with @c repeat_count > 1 represents N
+     * schematic instances of the same SCH_SCREEN.  BuildSheetList
+     * materializes N SCH_SHEET_PATHs ending in either the on-canvas
+     * template SCH_SHEET (slot 0) or one of N-1 synthetic clones
+     * (slots 1..N-1) — see SCH_SHEET::GetRepeatCount() /
+     * GetRepeatInstances() / IsSynthetic() / GetTemplate().
+     *
+     * @return
+     *   - @c 0 when @c Last() is the on-canvas template of a
+     *     @c repeat_count > 1 sheet (slot 0, the template's own KIID),
+     *   - @c k (with @c 1 <= k < N) when @c Last() is a synthetic
+     *     clone whose KIID equals the template's
+     *     @c GetRepeatInstances()[k-1],
+     *   - @c -1 when @c Last() is not part of a multi-channel
+     *     expansion (single-instance sheet, empty path, or a
+     *     synthetic clone whose KIID is not found on its template —
+     *     the last is a data-corruption guard, not a legal state).
+     *
+     * Pure structural helper: no SCH_SHEET_PATH state is mutated, no
+     * SCHEMATIC lookup is performed.  Cheap (O(N) over the parent's
+     * repeat instances; N is the channel count).
+     */
+    int GetSlotIndex() const;
+
     bool GetExcludedFromSim() const;
     bool GetExcludedFromSim( const wxString& aVariantName ) const;
     bool GetExcludedFromBOM() const;
