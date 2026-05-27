@@ -396,6 +396,68 @@ py::list list_open_frames()
     return out;
 }
 
+
+// ──────────────────────────────────────────────────────────────────────────
+// close_topmost_dialog — last-resort dismissal.
+//
+// Some dialogs use non-standard wx IDs for their Close button so the
+// EndModal-on-standard-id path in click_dialog_button doesn't fire,
+// and dispatching a wxEVT_BUTTON to a custom handler isn't reliable
+// (some handlers defer via wxYield, leaving the dialog up until the
+// IPC client's next blocking call wakes the loop).
+//
+// This binding bypasses the button entirely: find the topmost
+// modal wxDialog and call EndModal(wxID_CANCEL) directly.  Equivalent
+// to the user pressing Escape.
+// ──────────────────────────────────────────────────────────────────────────
+py::dict close_topmost_dialog( const std::string& dialog_title_substr )
+{
+    wxDialog* target = nullptr;
+
+    for( wxWindow* w : wxTopLevelWindows )
+    {
+        wxDialog* dlg = dynamic_cast<wxDialog*>( w );
+        if( !dlg )
+            continue;
+        if( !dlg->IsShown() )
+            continue;
+
+        if( !dialog_title_substr.empty() )
+        {
+            if( dlg->GetTitle().Find( wxString::FromUTF8( dialog_title_substr ) )
+                == wxNOT_FOUND )
+                continue;
+        }
+
+        target = dlg;
+        break;
+    }
+
+    py::dict result;
+    if( !target )
+    {
+        result[ "ok" ]    = false;
+        result[ "error" ] = std::string( "no shown wxDialog found" );
+        return result;
+    }
+
+    const std::string title = target->GetTitle().ToStdString();
+
+    if( target->IsModal() )
+    {
+        target->EndModal( wxID_CANCEL );
+    }
+    else
+    {
+        // Non-modal: just close it.
+        target->Close( /*force=*/false );
+    }
+
+    result[ "ok" ]    = true;
+    result[ "title" ] = title;
+    return result;
+}
+
 } // anon
 
 
@@ -487,5 +549,21 @@ Note: this binding is preventive, not curative.  If a modal dialog is
 already blocking the main thread when you call it, the wxEvent never gets
 dispatched until something else unblocks the main loop.  Pair with a
 pre-flight ``dismiss_dialogs`` or a known-good wmctrl close.
+)DOC" );
+
+    m.def( "close_topmost_dialog", &close_topmost_dialog,
+           py::arg( "dialog_title_substr" ) = std::string(),
+           R"DOC(Force-close the topmost wxDialog via EndModal(wxID_CANCEL).
+
+For dialogs whose Close button uses a non-standard wx ID — where
+click_dialog_button takes the wxEVT_BUTTON path but the custom handler
+doesn't reliably dismiss (e.g., the Electrical Rules Checker).  This
+bypasses the button and calls EndModal directly, equivalent to the
+user pressing Escape on a standard modal.
+
+If ``dialog_title_substr`` is non-empty, only matches dialogs whose
+title contains that substring.
+
+Returns ``{ok, title}`` on success, ``{ok: False, error}`` otherwise.
 )DOC" );
 }
