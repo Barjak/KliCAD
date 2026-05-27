@@ -414,6 +414,7 @@ set( EESCHEMA_SRCS
     sch_pin.cpp
     sch_plotter.cpp
     sch_preview_panel.cpp
+    sch_ratsnest_item.cpp
     sch_reference_list.cpp
     sch_render_settings.cpp
     sch_screen.cpp
