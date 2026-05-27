@@ -903,6 +903,7 @@ py::dict sch_state_delete_by_kiid( const std::string& kiid_str )
     KIID            target( wxString::FromUTF8( kiid_str.c_str() ) );
     SCH_ITEM*       found        = nullptr;
     SCH_SCREEN*     found_screen = nullptr;
+    SCH_SHEET*      pin_parent   = nullptr;     // non-null when found is a sheet pin
 
     if( sch.IsValid() )
     {
@@ -913,6 +914,8 @@ py::dict sch_state_delete_by_kiid( const std::string& kiid_str )
             if( !screen )
                 continue;
 
+            // First check direct screen items (symbols, wires, labels,
+            // junctions, sheet instances).
             for( SCH_ITEM* item : screen->Items() )
             {
                 if( item->m_Uuid == target )
@@ -921,6 +924,30 @@ py::dict sch_state_delete_by_kiid( const std::string& kiid_str )
                     found_screen = screen;
                     break;
                 }
+            }
+
+            if( found )
+                break;
+
+            // SCH_SHEET_PINs aren't direct screen children — they're owned
+            // by their parent SCH_SHEET.  Walk every sheet on this screen
+            // and check its pins.  Required so per-pin sheet diff can
+            // delete individual pins.
+            for( SCH_ITEM* item : screen->Items().OfType( SCH_SHEET_T ) )
+            {
+                SCH_SHEET* sheet = static_cast<SCH_SHEET*>( item );
+                for( SCH_SHEET_PIN* pin : sheet->GetPins() )
+                {
+                    if( pin && pin->m_Uuid == target )
+                    {
+                        found        = pin;
+                        found_screen = screen;
+                        pin_parent   = sheet;
+                        break;
+                    }
+                }
+                if( found )
+                    break;
             }
 
             if( found )
@@ -939,8 +966,21 @@ py::dict sch_state_delete_by_kiid( const std::string& kiid_str )
 
     {
         SCH_COMMIT commit( frame );
-        commit.Removed( found, found_screen );
-        frame->RemoveFromScreen( found, found_screen );
+
+        if( pin_parent )
+        {
+            // SCH_SHEET_PIN — modify the parent sheet and remove the pin
+            // from its pin list.  RemoveFromScreen wouldn't work since
+            // pins aren't on the screen directly.
+            commit.Modify( pin_parent, found_screen );
+            pin_parent->RemovePin( static_cast<SCH_SHEET_PIN*>( found ) );
+        }
+        else
+        {
+            commit.Removed( found, found_screen );
+            frame->RemoveFromScreen( found, found_screen );
+        }
+
         commit.Push( wxT( "KliCAD: delete_by_kiid" ) );
     }
 
