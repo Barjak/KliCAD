@@ -3072,7 +3072,8 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
                     // The path-equality check that follows is the real
                     // correctness gate, so drop the prefilter.
                     SCH_SHEET_PATH pin_path = path;
-                    pin_path.push_back( pin->GetParent() );
+                    SCH_SHEET* pushTarget = resolveHierPinPushTarget( aParent->m_sheet, pin->GetParent() );
+                    pin_path.push_back( pushTarget );
 
                     if( pin_path != aParent->m_sheet )
                         continue;
