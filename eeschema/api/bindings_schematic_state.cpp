@@ -1192,9 +1192,23 @@ py::object sch_state_add_sheet(
         if( shared_screen )
             break;
     }
-    sheet->SetScreen( shared_screen
-                          ? shared_screen
-                          : new SCH_SCREEN( &frame->Schematic() ) );
+
+    if( shared_screen )
+    {
+        sheet->SetScreen( shared_screen );
+    }
+    else
+    {
+        SCH_SCREEN* new_screen = new SCH_SCREEN( &frame->Schematic() );
+        // Critical: SaveProject iterates SCH_SCREEN_S and writes each to
+        // screen->GetFileName().  Without setting the screen's filename,
+        // it stays empty and the save silently skips the child .kicad_sch.
+        // The Python side is expected to have laid down a stub at
+        // `<project_dir>/<filename>` first.
+        wxFileName resolved( frame->Prj().AbsolutePath( fn ) );
+        new_screen->SetFileName( resolved.GetFullPath() );
+        sheet->SetScreen( new_screen );
+    }
 
     {
         SCH_COMMIT commit( frame );
