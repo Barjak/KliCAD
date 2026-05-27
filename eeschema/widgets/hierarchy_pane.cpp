@@ -744,10 +744,18 @@ void HIERARCHY_PANE::onTreeEditFinished( wxTreeEvent& event )
 
                 if( modifyScreen )
                 {
-                    commit.Modify( data->m_SheetPath.Last()->GetField( FIELD_T::SHEET_NAME ),
+                    // Multi-channel: if the tree item points at a
+                    // synthetic clone (one of N peers from a repeated
+                    // sheet), forward the rename to the on-canvas
+                    // template.  Renaming a clone in place would
+                    // silently revert on the next hierarchy rebuild
+                    // (R0 audit, hierarchy_pane site A).
+                    SCH_SHEET* renameTarget = data->m_SheetPath.Last()->GetTemplate();
+
+                    commit.Modify( renameTarget->GetField( FIELD_T::SHEET_NAME ),
                                    modifyScreen );
 
-                    data->m_SheetPath.Last()->SetName( newName );
+                    renameTarget->SetName( newName );
 
                     renameIdenticalSheets( data->m_SheetPath, newName, &commit );
 
@@ -972,10 +980,15 @@ void HIERARCHY_PANE::renameIdenticalSheets( const SCH_SHEET_PATH& renamedSheet,
 
             if( modifyScreen )
             {
-                commit->Modify( data->m_SheetPath.Last()->GetField( FIELD_T::SHEET_NAME ),
+                // Multi-channel: forward rename to the template
+                // (R0 audit, hierarchy_pane site B — the recursive
+                // identical-sheets sweep called from site A).
+                SCH_SHEET* renameTarget = data->m_SheetPath.Last()->GetTemplate();
+
+                commit->Modify( renameTarget->GetField( FIELD_T::SHEET_NAME ),
                                 modifyScreen );
 
-                data->m_SheetPath.Last()->SetName( newName );
+                renameTarget->SetName( newName );
 
                 if( data->m_SheetPath == m_frame->GetCurrentSheet() )
                 {

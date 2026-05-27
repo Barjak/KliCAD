@@ -1028,12 +1028,17 @@ void SCH_SHEET_LIST::BuildSheetList( SCH_SHEET* aSheet, bool aCheckIntegrity )
         {
             SCH_SHEET* sheet = static_cast<SCH_SHEET*>( item );
 
+            // Recursion check applies to the on-canvas (template) sheet.
+            // Multi-channel clones share the template's filename, so a
+            // cycle would affect all clones identically — check once
+            // before slot expansion.
             if( aCheckIntegrity )
             {
-                if( !m_currentSheetPath.TestForRecursion( sheet->GetFileName(), parentFileName ) )
-                    BuildSheetList( sheet, true );
-                else
+                if( m_currentSheetPath.TestForRecursion( sheet->GetFileName(), parentFileName ) )
+                {
                     badSheets.push_back( sheet );
+                    continue;
+                }
             }
             else
             {
@@ -1041,8 +1046,53 @@ void SCH_SHEET_LIST::BuildSheetList( SCH_SHEET* aSheet, bool aCheckIntegrity )
                 // a simple recursion scenario to prevent stack overflow crashes
                 wxCHECK2_MSG( sheet->GetFileName() != aSheet->GetFileName(), continue,
                               wxT( "Recursion prevented in SCH_SHEET_LIST::BuildSheetList" ) );
+            }
 
-                BuildSheetList( sheet, false );
+            // Slot 0 is the on-canvas SCH_SHEET itself (its own m_Uuid).
+            BuildSheetList( sheet, aCheckIntegrity );
+
+            // Multi-channel: expand slots 1..N-1 as synthetic clones
+            // sharing the template's screen.  The schematic owns the
+            // clones (they survive as long as Hierarchy() copies might
+            // still hold paths into them).
+            if( sheet->GetRepeatCount() <= 1 )
+                continue;
+
+            const std::vector<KIID>& slotKIIDs = sheet->GetRepeatInstances();
+            int nClones = sheet->GetRepeatCount() - 1;
+
+            if( static_cast<int>( slotKIIDs.size() ) < nClones )
+            {
+                // Invariant violation — m_repeatInstances should have
+                // N-1 entries (slot 0 is the template's own m_Uuid).
+                // Don't crash; clamp to the available count.  Trace
+                // (not warn) — BuildSheetList runs from many sites,
+                // and warning here would spam the log on a malformed
+                // file.
+                wxLogTrace( traceSchSheetPaths,
+                            "BuildSheetList: sheet '%s' has repeat_count=%d but "
+                            "only %zu repeat_instances; clamping",
+                            sheet->GetName(),
+                            sheet->GetRepeatCount(),
+                            slotKIIDs.size() );
+                nClones = static_cast<int>( slotKIIDs.size() );
+            }
+
+            SCHEMATIC* schematic = sheet->Schematic();
+
+            if( !schematic )
+            {
+                wxLogTrace( traceSchSheetPaths,
+                            "BuildSheetList: sheet '%s' has no parent schematic; "
+                            "cannot mint multi-channel clones",
+                            sheet->GetName() );
+                continue;
+            }
+
+            for( int i = 0; i < nClones; ++i )
+            {
+                SCH_SHEET* clone = schematic->MintRepeatClone( sheet, slotKIIDs[i] );
+                BuildSheetList( clone, aCheckIntegrity );
             }
         }
     }

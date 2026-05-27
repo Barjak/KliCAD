@@ -432,7 +432,59 @@ SCH_SHEET_LIST SCHEMATIC::Hierarchy() const
 void SCHEMATIC::RefreshHierarchy()
 {
     ensureDefaultTopLevelSheet();
+
+    // Free clones from the previous walk before BuildSheetList starts
+    // populating fresh ones.  Any stale Hierarchy() copies still held
+    // by callers will end up with dangling clone pointers — which
+    // matches the existing pattern that Hierarchy() copies go stale
+    // on structural mutation.
+    ClearRepeatCloneCache();
+
     m_hierarchy = BuildSheetListSortedByPageNumbers();
+}
+
+
+SCH_SHEET* SCHEMATIC::MintRepeatClone( SCH_SHEET* aTemplate, const KIID& aSlotKIID ) const
+{
+    wxCHECK_MSG( aTemplate, nullptr,
+                 wxT( "MintRepeatClone called with null template" ) );
+
+    // Dedup by (template, slot KIID).  BuildSheetList is called from
+    // many sites outside RefreshHierarchy (plot, ERC, netlist, dialog
+    // properties, etc.) — without dedup each call would mint a fresh
+    // clone, leaking the previous clones and breaking pointer-identity
+    // comparisons across hierarchy snapshots (R2 audit, concern D).
+    auto key = std::make_pair( static_cast<const SCH_SHEET*>( aTemplate ), aSlotKIID );
+
+    auto it = m_repeatClones.find( key );
+
+    if( it != m_repeatClones.end() )
+        return it->second.get();
+
+    // Field-shallow-copy of the template via the existing copy ctor.
+    // Per R1 the copy ctor produces a non-synthetic SCH_SHEET (m_isSynthetic
+    // is reset to false on copy); MarkSynthetic below installs the clone
+    // identity.  The copy ctor also shares m_screen with the template
+    // (via SCH_SCREEN refcount), which is exactly the multi-channel
+    // semantic: N peers sharing one screen.
+    auto clone = std::make_unique<SCH_SHEET>( *aTemplate );
+
+    // Override the copied UUID with this slot's stable KIID.  The copy
+    // ctor preserves the template's m_Uuid (so slot 0 reads as the
+    // template's identity); slots 1..N-1 need their own.
+    const_cast<KIID&>( clone->m_Uuid ) = aSlotKIID;
+
+    clone->MarkSynthetic( aTemplate );
+
+    SCH_SHEET* ptr = clone.get();
+    m_repeatClones.emplace( key, std::move( clone ) );
+    return ptr;
+}
+
+
+void SCHEMATIC::ClearRepeatCloneCache() const
+{
+    m_repeatClones.clear();
 }
 
 
