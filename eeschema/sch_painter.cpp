@@ -3355,6 +3355,35 @@ void SCH_PAINTER::draw( const SCH_SHEET* aSheet, int aLayer )
         m_gal->DrawRectangle( pos, pos + size );
     }
 
+    // Multi-channel: draw "×N" decoration in the top-right corner of
+    // a repeated sheet.  Same bbox as a regular sheet — the decoration
+    // sits inside the sheet boundary so selection / move / autoplace
+    // logic is unchanged.
+    if( !drawingShadows && aLayer == LAYER_SHEET && aSheet->GetRepeatCount() > 1 )
+    {
+        wxString    decoration = wxString::Format( wxT( "×%d" ),
+                                                   aSheet->GetRepeatCount() );
+        // Text size keyed off the sheet's pen width so it scales with
+        // sheet visual emphasis.  ~6x pen width gives a glyph height
+        // that reads at typical zoom without crowding the corner.
+        int          glyphSize = 6 * getLineWidth( aSheet, false );
+        // Inset from the corner by ~one glyph so the decoration doesn't
+        // collide with the border stroke.
+        VECTOR2I     corner( pos.x + size.x - glyphSize / 2,
+                             pos.y + glyphSize );
+
+        GAL_SCOPED_ATTRS scopedAttrs( *m_gal, GAL_SCOPED_ATTRS::ALL_ATTRS );
+        m_gal->SetIsStroke( true );
+        m_gal->SetIsFill( true );
+        m_gal->SetStrokeColor( getRenderColor( aSheet, LAYER_SHEET, false, DNP ) );
+        m_gal->SetFillColor( getRenderColor( aSheet, LAYER_SHEET, false, DNP ) );
+        m_gal->SetLineWidth( getLineWidth( aSheet, false ) );
+        m_gal->SetGlyphSize( VECTOR2I( glyphSize, glyphSize ) );
+        m_gal->SetHorizontalJustify( GR_TEXT_H_ALIGN_RIGHT );
+        m_gal->SetVerticalJustify( GR_TEXT_V_ALIGN_TOP );
+        m_gal->BitmapText( decoration, corner, ANGLE_0 );
+    }
+
     if( DNP && aLayer == LAYER_SHEET )
     {
         int      layer = LAYER_DNP_MARKER;

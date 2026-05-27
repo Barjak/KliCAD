@@ -61,7 +61,10 @@ SCH_SHEET::SCH_SHEET( EDA_ITEM* aParent, const VECTOR2I& aPos, VECTOR2I aSize ) 
         m_excludedFromSim( false ),
         m_excludedFromBOM( false ),
         m_excludedFromBoard( false ),
-        m_DNP( false )
+        m_DNP( false ),
+        m_repeatCount( 1 ),
+        m_isSynthetic( false ),
+        m_template( nullptr )
 {
     m_layer = LAYER_SHEET;
     m_pos = aPos;
@@ -234,6 +237,15 @@ SCH_SHEET::SCH_SHEET( const SCH_SHEET& aSheet ) :
     m_borderColor = aSheet.m_borderColor;
     m_backgroundColor = aSheet.m_backgroundColor;
     m_instances = aSheet.m_instances;
+
+    m_repeatCount = aSheet.m_repeatCount;
+    m_repeatInstances = aSheet.m_repeatInstances;
+
+    // Copy ctor produces a non-synthetic SCH_SHEET regardless of source.
+    // Synthetic clones are minted only through the R2 BuildSheetList
+    // expansion path, which calls MarkSynthetic() explicitly.
+    m_isSynthetic = false;
+    m_template = nullptr;
 
     for( SCH_SHEET_PIN* pin : aSheet.m_pins )
     {
@@ -509,6 +521,13 @@ void SCH_SHEET::swapData( SCH_ITEM* aItem )
     std::swap( m_borderColor, sheet->m_borderColor );
     std::swap( m_backgroundColor, sheet->m_backgroundColor );
     std::swap( m_instances, sheet->m_instances );
+
+    std::swap( m_repeatCount, sheet->m_repeatCount );
+    std::swap( m_repeatInstances, sheet->m_repeatInstances );
+    // Deliberately NOT swapping m_isSynthetic / m_template — those are
+    // identity properties of the SCH_SHEET object itself, not of the
+    // user-visible data.  swapData is used by undo/redo, which only
+    // ever exchanges data between persisted-object peers.
 }
 
 
@@ -1952,6 +1971,12 @@ bool SCH_SHEET::operator==( const SCH_ITEM& aOther ) const
         if( !( GetFields()[i] == other->GetFields()[i] ) )
             return false;
     }
+
+    if( m_repeatCount != other->m_repeatCount )
+        return false;
+
+    if( m_repeatInstances != other->m_repeatInstances )
+        return false;
 
     return true;
 }

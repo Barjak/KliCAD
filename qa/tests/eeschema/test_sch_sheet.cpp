@@ -249,4 +249,119 @@ BOOST_AUTO_TEST_CASE( EndconnectionPoints )
 }
 
 
+/**
+ * Multi-channel (REPEAT-style) data model — R1.
+ *
+ * The on-canvas SCH_SHEET carries m_repeatCount + m_repeatInstances.
+ * Synthetic clones (materialized in R2 by BuildSheetList) carry
+ * m_isSynthetic + m_template.  These tests cover the data model only;
+ * R1 does not yet wire up the BuildSheetList expansion or the
+ * connection-graph bus-pin fan-out.
+ */
+BOOST_AUTO_TEST_CASE( RepeatCountDefault )
+{
+    // A fresh SCH_SHEET is single-instance and non-synthetic.  This
+    // guarantees no pre-R1 schematic changes behavior — defaults are
+    // indistinguishable from "no multi-channel data at all".
+    BOOST_CHECK_EQUAL( m_csheet.GetRepeatCount(), 1 );
+    BOOST_CHECK( m_csheet.GetRepeatInstances().empty() );
+    BOOST_CHECK_EQUAL( m_csheet.IsSynthetic(), false );
+    BOOST_CHECK_EQUAL( m_csheet.GetTemplate(), &m_sheet );
+}
+
+
+BOOST_AUTO_TEST_CASE( RepeatCountSetGet )
+{
+    m_sheet.SetRepeatCount( 8 );
+    BOOST_CHECK_EQUAL( m_csheet.GetRepeatCount(), 8 );
+
+    // Clamping: a count < 1 collapses to 1 (single-instance).  This
+    // protects downstream code from negative/zero counts produced by
+    // an out-of-sync file.
+    m_sheet.SetRepeatCount( 0 );
+    BOOST_CHECK_EQUAL( m_csheet.GetRepeatCount(), 1 );
+
+    m_sheet.SetRepeatCount( -5 );
+    BOOST_CHECK_EQUAL( m_csheet.GetRepeatCount(), 1 );
+}
+
+
+BOOST_AUTO_TEST_CASE( RepeatInstancesSetGet )
+{
+    std::vector<KIID> instances{ KIID(), KIID(), KIID() };
+    m_sheet.SetRepeatInstances( instances );
+
+    BOOST_CHECK_EQUAL( m_csheet.GetRepeatInstances().size(), 3 );
+    BOOST_CHECK( m_csheet.GetRepeatInstances()[0] == instances[0] );
+    BOOST_CHECK( m_csheet.GetRepeatInstances()[1] == instances[1] );
+    BOOST_CHECK( m_csheet.GetRepeatInstances()[2] == instances[2] );
+}
+
+
+BOOST_AUTO_TEST_CASE( CopyCtorPropagatesRepeatStateButNotSyntheticFlag )
+{
+    // Repeat state propagates through the copy ctor (a user-placed
+    // sheet that's duplicated stays a multi-channel sheet).  But the
+    // synthetic flag and template pointer DO NOT — they are identity
+    // properties of the schematic-owned synthetic-clone cache, set
+    // only by MarkSynthetic() during BuildSheetList expansion.
+    m_sheet.SetRepeatCount( 4 );
+    m_sheet.SetRepeatInstances( { KIID(), KIID(), KIID() } );
+
+    SCH_SHEET dummyTemplate;
+    m_sheet.MarkSynthetic( &dummyTemplate );
+    BOOST_REQUIRE( m_sheet.IsSynthetic() );
+
+    SCH_SHEET copy( m_sheet );
+
+    BOOST_CHECK_EQUAL( copy.GetRepeatCount(), 4 );
+    BOOST_CHECK_EQUAL( copy.GetRepeatInstances().size(), 3 );
+
+    BOOST_CHECK_EQUAL( copy.IsSynthetic(), false );
+    BOOST_CHECK_EQUAL( copy.GetTemplate(), &copy );
+}
+
+
+BOOST_AUTO_TEST_CASE( MarkSyntheticSetsTemplate )
+{
+    SCH_SHEET tmpl;
+    SCH_SHEET clone;
+
+    BOOST_CHECK_EQUAL( clone.IsSynthetic(), false );
+    BOOST_CHECK_EQUAL( clone.GetTemplate(), &clone );
+
+    clone.MarkSynthetic( &tmpl );
+
+    BOOST_CHECK_EQUAL( clone.IsSynthetic(), true );
+    BOOST_CHECK_EQUAL( clone.GetTemplate(), &tmpl );
+}
+
+
+BOOST_AUTO_TEST_CASE( EqualityIncludesRepeatState )
+{
+    // Two freshly-constructed SCH_SHEETs are NOT equal at baseline —
+    // their mandatory fields (SHEET_NAME, SHEET_FILENAME) get distinct
+    // KIIDs at construction.  So the test pattern is:  copy first to
+    // establish a baseline-equal pair, then mutate one and assert
+    // operator== diverges, then mutate the other to match and assert
+    // it converges.
+    SCH_SHEET a;
+    SCH_SHEET b( a );
+    BOOST_REQUIRE( a == b );
+
+    a.SetRepeatCount( 4 );
+    BOOST_CHECK( !( a == b ) );
+
+    b.SetRepeatCount( 4 );
+    BOOST_CHECK( a == b );
+
+    std::vector<KIID> instances{ KIID(), KIID(), KIID() };
+    a.SetRepeatInstances( instances );
+    BOOST_CHECK( !( a == b ) );
+
+    b.SetRepeatInstances( instances );
+    BOOST_CHECK( a == b );
+}
+
+
 BOOST_AUTO_TEST_SUITE_END()

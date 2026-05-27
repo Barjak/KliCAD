@@ -508,6 +508,59 @@ public:
      */
     const std::vector<SCH_SHEET_INSTANCE>& GetInstances() const { return m_instances; }
 
+    // ──────────────────────────────────────────────────────────────────
+    // Multi-channel (REPEAT-style) sheets
+    //
+    // A user-placed SCH_SHEET with m_repeatCount > 1 represents N
+    // schematic instances of the same SCH_SCREEN.  At BuildSheetList
+    // time (Phase R2), N synthetic-clone SCH_SHEET children are
+    // materialized — one per slot — each sharing this sheet's
+    // SCH_SCREEN and carrying a stable KIID from m_repeatInstances.
+    //
+    // Slot 0 is implicit (this sheet's own m_Uuid).  m_repeatInstances
+    // holds the KIIDs for slots 1..N-1.  Size invariant:
+    // m_repeatInstances.size() == m_repeatCount - 1 (or empty when
+    // m_repeatCount == 1).
+    //
+    // Synthetic clones (constructed in R2) set m_isSynthetic = true
+    // and m_template = the on-canvas SCH_SHEET pointer.  Non-synthetic
+    // sheets always return GetTemplate() == this.
+    // ──────────────────────────────────────────────────────────────────
+    int GetRepeatCount() const { return m_repeatCount; }
+    void SetRepeatCount( int aCount ) { m_repeatCount = aCount < 1 ? 1 : aCount; }
+
+    const std::vector<KIID>& GetRepeatInstances() const { return m_repeatInstances; }
+    std::vector<KIID>& GetRepeatInstances() { return m_repeatInstances; }
+    void SetRepeatInstances( const std::vector<KIID>& aInstances ) { m_repeatInstances = aInstances; }
+
+    bool IsSynthetic() const { return m_isSynthetic; }
+
+    /**
+     * Return the on-canvas user-placed SCH_SHEET.  For non-synthetic
+     * sheets this returns @c this; for synthetic clones it returns the
+     * template they were derived from.  Use this when code needs to
+     * read template-shared state (fields, name, filename) from a
+     * potentially-synthetic SCH_SHEET — although since synthetic
+     * clones are field-shallow-copies, direct reads on the clone
+     * return the same value.  Forwarding via this accessor matters
+     * for code paths that mutate (e.g., SetName from the hierarchy
+     * navigator — see R0 audit).
+     */
+    SCH_SHEET* GetTemplate() const { return m_isSynthetic && m_template ? m_template : const_cast<SCH_SHEET*>( this ); }
+
+    /**
+     * Mark this SCH_SHEET as a synthetic clone of @a aTemplate.  Only
+     * called by the BuildSheetList expansion path in Phase R2.  Once
+     * marked, the clone's lifetime is owned by the SCHEMATIC's
+     * synthetic-clone cache; it must not be added to a SCH_SCREEN's
+     * item list and must not be serialized.
+     */
+    void MarkSynthetic( SCH_SHEET* aTemplate )
+    {
+        m_isSynthetic = true;
+        m_template = aTemplate;
+    }
+
     /**
      * Check to see if this sheet has a root sheet instance.
      *
@@ -677,6 +730,20 @@ private:
     KIGFX::COLOR4D              m_backgroundColor;
 
     std::vector<SCH_SHEET_INSTANCE> m_instances;
+
+    // Multi-channel data — see the public block above for details.
+    // Default state (m_repeatCount == 1, empty m_repeatInstances,
+    // m_isSynthetic == false, m_template == nullptr) is a plain
+    // single-instance sheet, indistinguishable from the pre-R1
+    // behavior.
+    int                         m_repeatCount;
+    std::vector<KIID>           m_repeatInstances;
+
+    // Synthetic-clone state.  Transient — never serialized.  Only
+    // set on schematic-owned clones constructed by R2's
+    // BuildSheetList expansion.
+    bool                        m_isSynthetic;
+    SCH_SHEET*                  m_template;
 };
 
 

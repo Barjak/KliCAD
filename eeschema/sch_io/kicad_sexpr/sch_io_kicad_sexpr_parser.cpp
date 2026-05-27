@@ -3818,6 +3818,41 @@ SCH_SHEET* SCH_IO_KICAD_SEXPR_PARSER::parseSheet()
             sheet->AddPin( parseSchSheetPin( sheet.get() ) );
             break;
 
+        case T_repeat_count:
+        {
+            int count = parseInt( "repeat_count value" );
+
+            if( count < 1 )
+                count = 1;
+
+            sheet->SetRepeatCount( count );
+            NeedRIGHT();
+            break;
+        }
+
+        case T_repeat_instances:
+        {
+            std::vector<KIID> repeatInstances;
+
+            for( token = NextTok(); token != T_RIGHT; token = NextTok() )
+            {
+                if( token != T_LEFT )
+                    Expecting( T_LEFT );
+
+                token = NextTok();
+
+                if( token != T_uuid )
+                    Expecting( "uuid" );
+
+                NeedSYMBOL();
+                repeatInstances.emplace_back( parseKIID() );
+                NeedRIGHT();
+            }
+
+            sheet->SetRepeatInstances( repeatInstances );
+            break;
+        }
+
         case T_instances:
         {
             std::vector<SCH_SHEET_INSTANCE> instances;
@@ -4001,7 +4036,8 @@ SCH_SHEET* SCH_IO_KICAD_SEXPR_PARSER::parseSheet()
         }
 
         default:
-            Expecting( "at, size, stroke, background, instances, uuid, property, or pin" );
+            Expecting( "at, size, stroke, background, instances, uuid, property, "
+                       "pin, repeat_count, or repeat_instances" );
         }
     }
 

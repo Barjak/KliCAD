@@ -1134,6 +1134,25 @@ void SCH_IO_KICAD_SEXPR::saveSheet( SCH_SHEET* aSheet, const SCH_SHEET_LIST& aSh
         m_out->Print( ")" );  // Closes pin token.
     }
 
+    // Multi-channel: emit (repeat_count N) and (repeat_instances ...)
+    // only when this is a repeated sheet.  Default (count == 1, empty
+    // instances) is silently dropped so non-multi-channel schematics
+    // are byte-identical to pre-R1 output.
+    if( aSheet->GetRepeatCount() > 1 )
+    {
+        m_out->Print( "(repeat_count %d)", aSheet->GetRepeatCount() );
+
+        if( !aSheet->GetRepeatInstances().empty() )
+        {
+            m_out->Print( "(repeat_instances" );
+
+            for( const KIID& uuid : aSheet->GetRepeatInstances() )
+                KICAD_FORMAT::FormatUuid( m_out, uuid );
+
+            m_out->Print( ")" );  // Closes repeat_instances token.
+        }
+    }
+
     // Save all sheet instances here except the root sheet instance.
     std::vector< SCH_SHEET_INSTANCE > sheetInstances = aSheet->GetInstances();
 

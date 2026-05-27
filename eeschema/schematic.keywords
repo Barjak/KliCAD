@@ -139,6 +139,8 @@ pts
 radius
 rectangle
 reference
+repeat_count
+repeat_instances
 required
 rev
 reverse_hatch
