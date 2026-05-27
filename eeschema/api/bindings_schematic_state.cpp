@@ -894,6 +894,61 @@ py::list sch_state_list_symbols( const std::string& sheet_path = std::string() )
 
 
 // ──────────────────────────────────────────────────────────────────────────
+// list_labels — enumerate local/global/hierarchical labels.
+//
+// klicad-python's per-sheet diff uses this to preserve hier-label
+// positions across diff iterations (so user-positioned port anchors
+// survive).  Returns rows {kiid, name, kind, x_mm, y_mm, sheet_path}.
+// ──────────────────────────────────────────────────────────────────────────
+py::list sch_state_list_labels( const std::string& sheet_path = std::string() )
+{
+    SCH_EDIT_FRAME* frame = require_sch_edit_frame();
+    SCHEMATIC&      sch   = frame->Schematic();
+    py::list        out;
+
+    if( !sch.IsValid() )
+        return out;
+
+    for( const SCH_SHEET_PATH& path : sch.Hierarchy() )
+    {
+        std::string this_path = std::string( path.Path().AsString().utf8_str() );
+        if( !sheet_path.empty() && this_path != sheet_path )
+            continue;
+
+        SCH_SCREEN* screen = path.LastScreen();
+        if( !screen )
+            continue;
+
+        for( SCH_ITEM* item : screen->Items() )
+        {
+            const char* kind = nullptr;
+            switch( item->Type() )
+            {
+            case SCH_LABEL_T:        kind = "local";        break;
+            case SCH_GLOBAL_LABEL_T: kind = "global";       break;
+            case SCH_HIER_LABEL_T:   kind = "hierarchical"; break;
+            default:                 continue;
+            }
+
+            SCH_LABEL_BASE* lbl = static_cast<SCH_LABEL_BASE*>( item );
+            VECTOR2I        pos = lbl->GetPosition();
+
+            py::dict d;
+            d[ "kiid" ]       = lbl->m_Uuid.AsStdString();
+            d[ "name" ]       = std::string( lbl->GetText().utf8_string() );
+            d[ "kind" ]       = std::string( kind );
+            d[ "sheet_path" ] = this_path;
+            d[ "x_mm" ]       = schIUScale.IUTomm( pos.x );
+            d[ "y_mm" ]       = schIUScale.IUTomm( pos.y );
+            out.append( d );
+        }
+    }
+
+    return out;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
 // delete_by_kiid — remove a single SCH_ITEM by its UUID
 // ──────────────────────────────────────────────────────────────────────────
 py::dict sch_state_delete_by_kiid( const std::string& kiid_str )
@@ -1002,7 +1057,8 @@ py::dict sch_state_delete_by_kiid( const std::string& kiid_str )
 // router + power placement can re-emit them clean against the current
 // Circuit topology — no accumulation across runs.
 // ──────────────────────────────────────────────────────────────────────────
-py::dict sch_state_clear_routing( const std::string& sheet_path = std::string() )
+py::dict sch_state_clear_routing( const std::string& sheet_path = std::string(),
+                                   bool keep_hier_labels = false )
 {
     SCH_EDIT_FRAME* frame = require_sch_edit_frame();
     SCHEMATIC&      sch   = frame->Schematic();
@@ -1028,8 +1084,14 @@ py::dict sch_state_clear_routing( const std::string& sheet_path = std::string() 
                 KICAD_T t = item->Type();
 
                 if( t == SCH_JUNCTION_T || t == SCH_LABEL_T
-                    || t == SCH_GLOBAL_LABEL_T || t == SCH_HIER_LABEL_T )
+                    || t == SCH_GLOBAL_LABEL_T )
                 {
+                    to_remove.push_back( item );
+                }
+                else if( t == SCH_HIER_LABEL_T && !keep_hier_labels )
+                {
+                    // Optionally spared so port anchors can survive
+                    // diff iterations (klicad-python H3 contract).
                     to_remove.push_back( item );
                 }
                 else if( t == SCH_LINE_T && item->GetLayer() == LAYER_WIRE )
@@ -1451,6 +1513,18 @@ Used by klicad-python's to_schematic(mode='diff') to compute the
 add/remove/keep ref-set and verify field state per sheet.
 )DOC" );
 
+    m.def( "list_labels", &sch_state_list_labels,
+           py::arg( "sheet_path" ) = std::string(),
+           R"DOC(Enumerate SCH_LABEL / SCH_GLOBAL_LABEL / SCH_HIER_LABEL items.
+
+sheet_path: "" = walk whole hierarchy (default); "/uuid" = scope to one
+sheet.  Each row: kiid, name, kind ∈ {'local','global','hierarchical'},
+sheet_path, x_mm, y_mm.
+
+Used by klicad-python's port-anchor diff so user-positioned hier-labels
+survive iterations.
+)DOC" );
+
     m.def( "delete_by_kiid", &sch_state_delete_by_kiid, py::arg( "kiid" ),
            R"DOC(Remove a single SCH_ITEM (symbol, wire, label, junction, sheet,
 sheet-pin) by UUID.
@@ -1460,13 +1534,19 @@ item matches.  Wrapped in an SCH_COMMIT so the deletion is undoable.
 )DOC" );
 
     m.def( "clear_routing", &sch_state_clear_routing,
-           py::arg( "sheet_path" ) = std::string(),
+           py::arg( "sheet_path" )       = std::string(),
+           py::arg( "keep_hier_labels" ) = false,
            R"DOC(Bulk-delete every wire, label, junction, and #PWR_* power-flag
 symbol; preserve real component symbols.
 
-sheet_path: "" = walk whole hierarchy (default); "/uuid" = scope to one
-sheet.  Used between diff iterations so the router and power-symbol
-placement re-emit clean each pass without #PWR accumulation.
+sheet_path:       "" = walk whole hierarchy (default); "/uuid" = scope
+                  to one sheet.  Used between diff iterations so the
+                  router and power-symbol placement re-emit clean each
+                  pass without #PWR accumulation.
+keep_hier_labels: when True, SCH_HIER_LABELs are spared.  Used by
+                  to_schematic(mode='diff') on child sheets so port
+                  anchors keep their (possibly user-positioned)
+                  coordinates across iterations.
 
 Returns {ok: True, removed: int}.
 )DOC" );
