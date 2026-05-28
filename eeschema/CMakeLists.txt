@@ -505,6 +505,7 @@ if( KICAD_IPC_API )
         api/api_handler_sch.cpp
         api/bindings_annotation.cpp
         api/bindings_hierarchy.cpp
+        api/bindings_ratsnest.cpp
         api/bindings_sch_actions.cpp
         api/bindings_schematic_state.cpp
         api/bindings_sim_advanced.cpp
