@@ -39,6 +39,9 @@
 #include <pybind11/embed.h>
 #include <pybind11/stl.h>
 
+#include <kiway.h>
+#include <kiway_holder.h>
+#include <mail_type.h>
 #include <pgm_base.h>
 #include <project.h>
 #include <project/project_archiver.h>
@@ -47,6 +50,7 @@
 
 #include <wx/filename.h>
 #include <wx/string.h>
+#include <wx/window.h>
 
 #include <stdexcept>
 #include <string>
@@ -123,6 +127,46 @@ py::list pm_list_open_projects()
 }
 
 
+// Locate a live KIWAY by walking wxTopLevelWindows.  Returns nullptr in headless
+// (kicad-cli api-server) mode where no GUI frame is up --- that's fine, because
+// without frames there's no SCHEMATIC/BOARD holding a PROJECT* to dangle.
+// Mirrors the find_live_kiway() helpers in bindings_drc.cpp / bindings_erc.cpp.
+KIWAY* find_live_kiway_for_project_manager()
+{
+    for( wxWindow* w : wxTopLevelWindows )
+    {
+        if( KIWAY_HOLDER* holder = dynamic_cast<KIWAY_HOLDER*>( w ) )
+        {
+            if( holder->HasKiway() )
+                return &holder->Kiway();
+        }
+    }
+    return nullptr;
+}
+
+
+// Tell any live SCH_EDIT_FRAME / PCB_EDIT_FRAME to disconnect their SCHEMATIC /
+// BOARD from the currently-active PROJECT, before SETTINGS_MANAGER unloads it.
+// Mirrors the wx file-open path (eeschema/files-io.cpp:199, pcbnew/files.cpp:602)
+// which the API path used to skip --- that omission left SCHEMATIC::m_project
+// pointing at a freed PROJECT and crashed the next SetProject() call.
+void disconnect_frames_from_active_project()
+{
+    KIWAY* kiway = find_live_kiway_for_project_manager();
+    if( !kiway )
+        return;
+
+    std::string payload;
+
+    // doCreate=false on the receiver side --- the mail handlers no-op when the
+    // frame doesn't exist, but we don't even want to instantiate one just to
+    // tell it to disconnect.  ExpressMail itself routes by FRAME_T and silently
+    // drops if the player isn't up.
+    kiway->ExpressMail( FRAME_SCH, MAIL_PROJECT_TEARDOWN, payload );
+    kiway->ExpressMail( FRAME_PCB_EDITOR, MAIL_PROJECT_TEARDOWN, payload );
+}
+
+
 py::dict pm_load_project( const std::string& aPath, bool aSetActive )
 {
     if( aPath.empty() )
@@ -131,9 +175,26 @@ py::dict pm_load_project( const std::string& aPath, bool aSetActive )
     SETTINGS_MANAGER& mgr  = get_settings_manager_for_project_manager();
     const wxString    full = wxString::FromUTF8( aPath );
 
+    // SETTINGS_MANAGER::LoadProject() in GUI mode unloads the previously-active
+    // project (freeing the PROJECT object) before loading the new one.  The wx
+    // file-open paths in eeschema/pcbnew handle this correctly by first calling
+    // Schematic().SetProject(nullptr) / BOARD::ClearProject() so the editor's
+    // SCHEMATIC/BOARD stops pointing at the about-to-be-freed PROJECT.  The
+    // API path used to skip that disconnect, leaving SCHEMATIC::m_project
+    // dangling and crashing the next SetProject() call inside the editor.
+    // Replay the wx-flow ordering here: send a teardown mail to the live
+    // editor frames, then explicitly unload the current project, then load
+    // the new one.
     bool ok = false;
     {
         py::gil_scoped_release nogil;
+
+        if( aSetActive && mgr.IsProjectOpen() )
+        {
+            disconnect_frames_from_active_project();
+            mgr.UnloadProject( &mgr.Prj(), /* aSave */ false );
+        }
+
         ok = mgr.LoadProject( full, aSetActive );
     }
 

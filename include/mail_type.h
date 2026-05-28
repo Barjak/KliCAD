@@ -57,7 +57,12 @@ enum MAIL_T
     MAIL_RELOAD_LIB,               // Reload Library List if one was added
     MAIL_RELOAD_PLUGINS,           // Reload python plugins
     MAIL_REFRESH_SYMBOL,           // Refresh symbol in symbol viewer
-    MAIL_SCH_NAVIGATE_TO_SHEET     // Navigate to sheet by filename if in hierarchy
+    MAIL_SCH_NAVIGATE_TO_SHEET,    // Navigate to sheet by filename if in hierarchy
+    MAIL_PROJECT_TEARDOWN          // Disconnect frame's SCHEMATIC/BOARD from the current
+                                   // PROJECT before SETTINGS_MANAGER::UnloadProject frees it.
+                                   // Mirrors the wx file-open path (see eeschema/files-io.cpp:199
+                                   // and pcbnew/files.cpp:602).  Sent by API-driven project
+                                   // switches in common/api/bindings_project_manager.cpp.
 };
 
 #endif  // MAIL_TYPE_H_

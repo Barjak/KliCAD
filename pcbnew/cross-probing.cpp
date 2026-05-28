@@ -734,6 +734,16 @@ void PCB_EDIT_FRAME::KiwayMailIn( KIWAY_MAIL_EVENT& mail )
         GetToolManager()->RunAction( ACTIONS::pluginsReload );
         break;
 
+    case MAIL_PROJECT_TEARDOWN:
+        // The current PROJECT is about to be freed by SETTINGS_MANAGER::UnloadProject.
+        // Drop our BOARD -> PROJECT link before that happens so subsequent code paths
+        // don't dereference a dangling pointer (see pcbnew/files.cpp:602 for the
+        // matching wx-flow disconnect via BOARD::ClearProject).
+        if( BOARD* board = GetBoard() )
+            board->ClearProject();
+
+        break;
+
     case MAIL_RELOAD_LIB:
     {
         m_designBlocksPane->RefreshLibs();

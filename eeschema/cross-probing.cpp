@@ -1154,6 +1154,16 @@ void SCH_EDIT_FRAME::KiwayMailIn( KIWAY_MAIL_EVENT& mail )
         break;
     }
 
+    case MAIL_PROJECT_TEARDOWN:
+        // The current PROJECT is about to be freed by SETTINGS_MANAGER::UnloadProject.
+        // Drop our SCHEMATIC -> PROJECT link before that happens so subsequent code
+        // paths don't dereference a dangling pointer (see eeschema/files-io.cpp:199
+        // for the matching wx-flow disconnect).
+        if( m_schematic )
+            m_schematic->SetProject( nullptr );
+
+        break;
+
     case MAIL_SCH_NAVIGATE_TO_SHEET:
     {
         wxString targetFile( payload );
