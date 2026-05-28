@@ -262,7 +262,18 @@ void SIMULATOR_FRAME::SaveSettings( APP_SETTINGS_BASE* aCfg )
         m_ui->SaveSettings( cfg );
     }
 
-    bool modified = Prj().GetProjectFile().m_SchematicSettings->m_NgspiceSettings->SaveToFile();
+    // Defensive: at app shutdown, the project may already be torn down —
+    // m_SchematicSettings can be null and m_NgspiceSettings can be null
+    // even when m_SchematicSettings is alive (e.g., schematic never
+    // loaded but the simulator frame was opened).  Reproduced on Linux
+    // shutdown after the test_gui_smoke suite (segfault at this site).
+    PROJECT_FILE&        projectFile = Prj().GetProjectFile();
+    SCHEMATIC_SETTINGS*  schSettings = projectFile.m_SchematicSettings;
+
+    if( !schSettings || !schSettings->m_NgspiceSettings )
+        return;
+
+    bool modified = schSettings->m_NgspiceSettings->SaveToFile();
 
     if( m_schematicFrame && modified )
         m_schematicFrame->OnModify();
