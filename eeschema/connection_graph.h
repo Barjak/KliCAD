@@ -298,6 +298,18 @@ private:
     /// this one.
     std::unordered_set<CONNECTION_SUBGRAPH*> m_hier_children;
 
+    /// R3.3 / multi-channel: when this subgraph was matched to a parent bus
+    /// pin via per-slot bit fan-out (``repeatBusPinBitName``), this carries
+    /// the slot index K (zero-based, the position within the parent's bus
+    /// range).  ``propagateToNeighbors``'s final Clone() pass uses it to
+    /// rename this subgraph to the K-th bus member of the parent's driver
+    /// connection (so ``DATA[0..3]`` -> ``DATA[1]`` for slot 1) instead of
+    /// the whole-bus name — without it, every slot collapsed onto the
+    /// parent's bus driver name and the netlist exporter could not
+    /// distinguish slot K's body from the bus itself.  Negative when the
+    /// subgraph is not multi-channel-bound.
+    int m_repeat_bus_bit_index = -1;
+
     /// A cache of escaped netnames from schematic items.
     mutable std::mutex m_driver_name_cache_mutex;
     mutable std::unordered_map<SCH_ITEM*, wxString> m_driver_name_cache;

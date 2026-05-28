@@ -3031,6 +3031,14 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
                         candidate->m_hier_parent = aParent;
                         aParent->m_hier_children.insert( candidate );
 
+                        // R3.3: when the match came via per-slot bit fan-out
+                        // (bitName non-empty), record the slot index so the
+                        // final Clone() pass selects the K-th member of the
+                        // parent's bus driver (DATA[0..3] -> DATA[K])
+                        // instead of cloning the whole-bus driver name.
+                        if( !bitName.IsEmpty() )
+                            candidate->m_repeat_bus_bit_index = path.GetSlotIndex();
+
                         // Should we skip adding the candidate to the list if the parent and candidate subgraphs
                         // are not the same?
                         wxASSERT( candidate->m_graph == aParent->m_graph );
@@ -3054,12 +3062,25 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
 
             for( CONNECTION_SUBGRAPH* candidate : it->second )
             {
-                if( candidate->m_hier_pins.empty()
-                    || visited.contains( candidate )
-                    || candidate->m_driver_connection->Type() != aParent->m_driver_connection->Type() )
-                {
+                if( candidate->m_hier_pins.empty() || visited.contains( candidate ) )
                     continue;
-                }
+
+                // Pre-R3.3, a same-type filter rejected candidates whose
+                // driver wasn't the same connection type (scalar vs bus).
+                // That filter is the wrong gate for multi-channel: a
+                // scalar body hier-label on slot K is *expected* to
+                // connect to a bus parent pin (via repeatBusPinBitName
+                // bit fan-out).  Defer the type check — if no bit name
+                // applies, the name comparison below uses the candidate
+                // driver's plain name and the types will still need to
+                // agree because the names won't match across bus/scalar.
+                const bool same_type =
+                        ( candidate->m_driver_connection->Type()
+                          == aParent->m_driver_connection->Type() );
+                const bool candidate_is_bus = candidate->m_driver_connection->IsBus();
+
+                if( !same_type && !candidate_is_bus )
+                    continue;
 
                 for( SCH_SHEET_PIN* pin : candidate->m_hier_pins )
                 {
@@ -3092,6 +3113,15 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
                     {
                         wxLogTrace( ConnTrace, wxS( "%lu: found additional parent %lu (%s)" ),
                                     aParent->m_code, candidate->m_code, candidate->m_driver_connection->Name() );
+
+                        // R3.3: same per-slot binding as the forward
+                        // direction — here aParent is the body subgraph
+                        // and candidate is the parent bus.  Record the
+                        // slot index from aParent->m_sheet so the
+                        // subsequent Clone() pass swaps the whole-bus
+                        // driver for the K-th bus member.
+                        if( !bitName.IsEmpty() )
+                            aParent->m_repeat_bus_bit_index = aParent->m_sheet.GetSlotIndex();
 
                         aParent->m_hier_children.insert( candidate );
                         search_list.push_back( candidate );
@@ -3349,12 +3379,35 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
     {
         wxString old_name = subgraph->m_driver_connection->Name();
 
-        subgraph->m_driver_connection->Clone( *conn );
+        // R3.3: if this subgraph was bound to a specific bus member via
+        // multi-channel per-slot fan-out, clone the matching member (e.g.
+        // DATA[1]) rather than the whole-bus driver (DATA[0..3]).  Falls
+        // back to the plain bus clone when the bit index isn't set or the
+        // parent's bus doesn't have enough members (defensive — the
+        // member match should always succeed if ercCheckRepeatBusPinWidths
+        // didn't reject the schematic).
+        SCH_CONNECTION* clone_src = conn;
 
-        if( old_name != conn->Name() )
+        if( subgraph->m_repeat_bus_bit_index >= 0 && conn->IsBus() )
+        {
+            const auto& members = conn->Members();
+            int idx = subgraph->m_repeat_bus_bit_index;
+
+            if( idx < static_cast<int>( members.size() ) )
+            {
+                clone_src = members[ static_cast<size_t>( idx ) ].get();
+                wxLogTrace( ConnTrace,
+                            wxS( "R3.3 clone: %lu bit %d -> %s" ),
+                            subgraph->m_code, idx, clone_src->Name() );
+            }
+        }
+
+        subgraph->m_driver_connection->Clone( *clone_src );
+
+        if( old_name != clone_src->Name() )
             recacheSubgraphName( subgraph, old_name );
 
-        if( conn->IsBus() )
+        if( clone_src->IsBus() )
             propagate_bus_neighbors( subgraph );
     }
 
