@@ -2943,23 +2943,45 @@ static SCH_SHEET* resolveHierPinPushTarget( const SCH_SHEET_PATH& aPath,
  * @param aPin   The hierarchical sheet pin whose effective bit name is
  *               wanted; the pin always lives on the on-canvas template
  *               (clones are never inserted into any screen).
- * @return       The bit-K scalar name (e.g. "DATA1") on success, or an empty
- *               string when no fan-out applies.
+ * @return       Both the bit-K scalar member name (e.g. "DATA1" for slot 1
+ *               on a "DATA[0..3]" pin) and the bus prefix base name
+ *               ("DATA") on success.  Both fields are empty when no
+ *               fan-out applies (scalar pin, no repeat, width mismatch,
+ *               etc.) — callers must treat empty `bitName` as "matcher
+ *               should fall back to the full bus pin name".
+ *
+ * The base-name field supports Candidate A from the multi-channel
+ * vectorization audit: when the body has a scalar hier-port `DATA` on a
+ * `repeat=N` sheet whose pin is `DATA[0..N-1]`, the forward/reverse
+ * direction matchers accept either the bit-K member name (legacy
+ * hand-unrolled shape) OR the bus prefix (new vectorized shape).  Either
+ * match still records `m_repeat_bus_bit_index = slot K` so the existing
+ * Clone() pass renames to the K-th bus member.
  */
-static wxString repeatBusPinBitName( const SCH_SHEET_PATH& aPath, SCH_SHEET_PIN* aPin )
+struct RepeatBusPinBitInfo
 {
+    wxString prefix;   ///< Bus base name (e.g. "DATA"); empty when fan-out doesn't apply.
+    wxString bitName;  ///< Bit-K member name (e.g. "DATA1"); empty when fan-out doesn't apply.
+};
+
+
+static RepeatBusPinBitInfo repeatBusPinBitInfo( const SCH_SHEET_PATH& aPath,
+                                                SCH_SHEET_PIN*        aPin )
+{
+    RepeatBusPinBitInfo info;
+
     if( !aPin )
-        return wxEmptyString;
+        return info;
 
     SCH_SHEET* tmpl = aPin->GetParent();
 
     if( !tmpl || tmpl->GetRepeatCount() <= 1 )
-        return wxEmptyString;
+        return info;
 
     int slot = aPath.GetSlotIndex();
 
     if( slot < 0 )
-        return wxEmptyString;
+        return info;
 
     // Pin name as authored on the sheet (unescaped form expected by
     // ParseBusVector); GetShownText resolves any text variables, mirroring
@@ -2971,15 +2993,29 @@ static wxString repeatBusPinBitName( const SCH_SHEET_PATH& aPath, SCH_SHEET_PIN*
     std::vector<wxString> members;
 
     if( !NET_SETTINGS::ParseBusVector( pinText, &prefix, &members ) )
-        return wxEmptyString;
+        return info;
 
     if( static_cast<int>( members.size() ) != tmpl->GetRepeatCount() )
-        return wxEmptyString;  // Width mismatch — ERC reports it separately.
+        return info;  // Width mismatch — ERC reports it separately.
 
     if( slot < 0 || slot >= static_cast<int>( members.size() ) )
-        return wxEmptyString;
+        return info;
 
-    return EscapeString( members[ static_cast<size_t>( slot ) ], CTX_NETNAME );
+    info.prefix  = EscapeString( prefix, CTX_NETNAME );
+    info.bitName = EscapeString( members[ static_cast<size_t>( slot ) ], CTX_NETNAME );
+    return info;
+}
+
+
+/**
+ * Thin wrapper preserving the legacy single-return interface for any
+ * call sites that only need the bit-K member name.  The new
+ * propagateToNeighbors matcher uses repeatBusPinBitInfo directly so it
+ * can fall back to base-name matching.
+ */
+static wxString repeatBusPinBitName( const SCH_SHEET_PATH& aPath, SCH_SHEET_PIN* aPin )
+{
+    return repeatBusPinBitInfo( aPath, aPin ).bitName;
 }
 
 
@@ -3006,9 +3042,15 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
             // Phase R3.3: a bus-syntax sheet pin on a multi-channel (repeat>1)
             // sheet fans out one bit per slot; on slot K the body-side scalar
             // binding for the pin is bit K of the parent's bus.  When the
-            // helper returns a non-empty bit name, we match the child's scalar
-            // hier-label against it instead of the full bus pin name.
-            const wxString bitName = repeatBusPinBitName( path, pin );
+            // helper returns a non-empty bit name, we accept body labels
+            // that match EITHER the bit-K member name (legacy hand-unrolled
+            // shape: DATA0..DATA3 labels) OR the bus base name (Candidate A
+            // / vectorized shape: one DATA label).  Either match still
+            // records m_repeat_bus_bit_index = slot K so the Clone() pass
+            // renames to the K-th member of the parent's bus driver.
+            const RepeatBusPinBitInfo info = repeatBusPinBitInfo( path, pin );
+            const wxString& bitName  = info.bitName;
+            const wxString& basePrefix = info.prefix;
             const wxString pinName = bitName.IsEmpty() ? aParent->GetNameForDriver( pin )
                                                        : bitName;
 
@@ -3023,7 +3065,18 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
 
                 for( SCH_HIERLABEL* label : candidate->m_hier_ports )
                 {
-                    if( candidate->GetNameForDriver( label ) == pinName )
+                    const wxString candidateName = candidate->GetNameForDriver( label );
+                    const bool bitMatch  = ( candidateName == pinName );
+                    // Base-name fallback only fires on a multi-channel
+                    // bus pin (bitName non-empty) and only when the
+                    // bit-name didn't already match — bit-name wins, so
+                    // hand-unrolled schematics keep working unchanged.
+                    const bool baseMatch = !bitMatch
+                                           && !bitName.IsEmpty()
+                                           && !basePrefix.IsEmpty()
+                                           && candidateName == basePrefix;
+
+                    if( bitMatch || baseMatch )
                     {
                         wxLogTrace( ConnTrace, wxS( "%lu: found child %lu (%s)" ), aParent->m_code,
                                     candidate->m_code, candidate->m_driver_connection->Name() );
@@ -3036,6 +3089,8 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
                         // final Clone() pass selects the K-th member of the
                         // parent's bus driver (DATA[0..3] -> DATA[K])
                         // instead of cloning the whole-bus driver name.
+                        // Both bit-name and base-name matches use the same
+                        // slot index from the path.
                         if( !bitName.IsEmpty() )
                             candidate->m_repeat_bus_bit_index = path.GetSlotIndex();
 
@@ -3102,14 +3157,27 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
                     // Phase R3.3: mirror the bus-pin bit fan-out in the
                     // reverse-direction (child-port -> parent-pin) match so a
                     // body-side scalar hier-label on slot K can attach to its
-                    // parent's bus pin.
-                    const wxString bitName =
-                            repeatBusPinBitName( aParent->m_sheet, pin );
+                    // parent's bus pin.  Candidate A extension: also accept a
+                    // body label whose name is the bus base name (e.g.
+                    // "DATA") — the slot index in aParent->m_sheet still
+                    // drives the bit-K rename in the Clone() pass.  Bit-name
+                    // match has priority for backward compatibility.
+                    const RepeatBusPinBitInfo info =
+                            repeatBusPinBitInfo( aParent->m_sheet, pin );
+                    const wxString& bitName    = info.bitName;
+                    const wxString& basePrefix = info.prefix;
                     const wxString pinName = bitName.IsEmpty()
                                                      ? candidate->GetNameForDriver( pin )
                                                      : bitName;
 
-                    if( aParent->GetNameForDriver( label ) == pinName )
+                    const wxString parentLabelName = aParent->GetNameForDriver( label );
+                    const bool bitMatch  = ( parentLabelName == pinName );
+                    const bool baseMatch = !bitMatch
+                                           && !bitName.IsEmpty()
+                                           && !basePrefix.IsEmpty()
+                                           && parentLabelName == basePrefix;
+
+                    if( bitMatch || baseMatch )
                     {
                         wxLogTrace( ConnTrace, wxS( "%lu: found additional parent %lu (%s)" ),
                                     aParent->m_code, candidate->m_code, candidate->m_driver_connection->Name() );
@@ -3119,7 +3187,8 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
                         // and candidate is the parent bus.  Record the
                         // slot index from aParent->m_sheet so the
                         // subsequent Clone() pass swaps the whole-bus
-                        // driver for the K-th bus member.
+                        // driver for the K-th bus member.  Both bit-name
+                        // and base-name match paths set the same index.
                         if( !bitName.IsEmpty() )
                             aParent->m_repeat_bus_bit_index = aParent->m_sheet.GetSlotIndex();
 
@@ -4937,6 +5006,30 @@ int CONNECTION_GRAPH::ercCheckHierSheets()
             {
                 std::set<wxString> matchedPins;
 
+                // Candidate A: on a multi-channel sheet (repeat>1) the
+                // body may declare a scalar hier-label whose name equals
+                // the bus pin's base prefix (e.g. body "IN" matches a
+                // pin "IN[0..3]").  Pre-compute base-name -> pin-name
+                // for any bus pins on this sheet so the loop below can
+                // accept either an exact match or a base-name match.
+                std::map<wxString, wxString> busBaseToPinName;
+
+                if( parentSheet->GetRepeatCount() > 1 )
+                {
+                    for( const auto& [pinName, pin] : pins )
+                    {
+                        wxString              prefix;
+                        std::vector<wxString> members;
+
+                        if( NET_SETTINGS::ParseBusVector( pinName, &prefix, &members )
+                            && static_cast<int>( members.size() )
+                                       == parentSheet->GetRepeatCount() )
+                        {
+                            busBaseToPinName[ prefix ] = pinName;
+                        }
+                    }
+                }
+
                 for( SCH_ITEM* subItem : parentSheet->GetScreen()->Items() )
                 {
                     if( subItem->Type() == SCH_HIER_LABEL_T )
@@ -4944,10 +5037,21 @@ int CONNECTION_GRAPH::ercCheckHierSheets()
                         SCH_HIERLABEL* label = static_cast<SCH_HIERLABEL*>( subItem );
                         wxString       labelText = label->GetShownText( &parentSheetPath, false );
 
-                        if( !pins.contains( labelText ) )
-                            labels[ labelText ] = label;
-                        else
+                        if( pins.contains( labelText ) )
+                        {
                             matchedPins.insert( labelText );
+                        }
+                        else if( auto baseIt = busBaseToPinName.find( labelText );
+                                 baseIt != busBaseToPinName.end() )
+                        {
+                            // Body's scalar label name matches a bus
+                            // pin's base prefix — Candidate A binding.
+                            matchedPins.insert( baseIt->second );
+                        }
+                        else
+                        {
+                            labels[ labelText ] = label;
+                        }
                     }
                 }
 

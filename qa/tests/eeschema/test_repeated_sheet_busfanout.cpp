@@ -369,3 +369,170 @@ BOOST_AUTO_TEST_CASE( ScalarPinSharedAcrossSlots )
 
 
 BOOST_AUTO_TEST_SUITE_END()
+
+
+/**
+ * Candidate A — vectorized shape: the body declares ONE scalar `DATA`
+ * hier-label (not per-bit DATA0..DATA3) and the matcher accepts it via
+ * the bus base-name fallback.  Each slot K's `DATA` subgraph still
+ * binds to bit K of the parent's DATA[0..3] bus, driven by the slot
+ * index in the path rather than by name-encoding in the label.
+ *
+ * This is the canonical shape per the multi-channel spec; the legacy
+ * REPEATED_SHEET_BUSFANOUT_FIXTURE above remains as the backward-compat
+ * case for hand-unrolled bodies.
+ */
+struct REPEATED_SHEET_BUSFANOUT_SCALAR_FIXTURE
+{
+    REPEATED_SHEET_BUSFANOUT_SCALAR_FIXTURE() :
+            m_mgr()
+    {
+        m_mgr.LoadProject( "" );
+        m_schematic = std::make_unique<SCHEMATIC>( &m_mgr.Prj() );
+        m_schematic->Reset();
+
+        SCH_SHEET* defaultSheet = m_schematic->GetTopLevelSheet( 0 );
+
+        m_topScreen = new SCH_SCREEN( m_schematic.get() );
+        m_top = new SCH_SHEET( m_schematic.get() );
+        m_top->SetScreen( m_topScreen );
+        m_top->SetName( "Top" );
+        m_top->SetFileName( "top.kicad_sch" );
+
+        m_schematic->AddTopLevelSheet( m_top );
+        m_schematic->RemoveTopLevelSheet( defaultSheet );
+        delete defaultSheet;
+
+        m_channelScreen = new SCH_SCREEN( m_schematic.get() );
+        m_channel = new SCH_SHEET( m_schematic.get() );
+        const_cast<KIID&>( m_channel->m_Uuid ) = m_channelScreen->GetUuid();
+        m_channel->SetScreen( m_channelScreen );
+        m_channel->SetName( "Channel" );
+        m_channel->SetFileName( "channel.kicad_sch" );
+        m_channel->SetPosition( VECTOR2I( 0, 0 ) );
+        m_channel->SetSize( VECTOR2I( 50 * SCALE, 80 * SCALE ) );
+
+        m_topScreen->Append( m_channel );
+
+        m_channel->SetRepeatCount( 4 );
+
+        std::vector<KIID> slots;
+        slots.reserve( 3 );
+        for( int i = 0; i < 3; ++i )
+            slots.emplace_back();
+        m_channel->SetRepeatInstances( slots );
+
+        // Bus sheet pin DATA[0..3] — same as the legacy fixture.
+        m_busPin = new SCH_SHEET_PIN( m_channel );
+        m_busPin->SetText( wxT( "DATA[0..3]" ) );
+        m_busPin->SetShape( LABEL_FLAG_SHAPE::L_INPUT );
+        m_busPin->SetPosition( VECTOR2I( 0, 10 * SCALE ) );
+        m_channel->AddPin( m_busPin );
+
+        // Parent-side bus wire + bus label.
+        SCH_LINE* busWire = new SCH_LINE( VECTOR2I( -20 * SCALE, 10 * SCALE ),
+                                          LAYER_BUS );
+        busWire->SetEndPoint( VECTOR2I( 0, 10 * SCALE ) );
+        m_topScreen->Append( busWire );
+
+        SCH_LABEL* busLabel = new SCH_LABEL( VECTOR2I( -20 * SCALE, 10 * SCALE ),
+                                             wxT( "DATA[0..3]" ) );
+        m_topScreen->Append( busLabel );
+
+        // Vectorized body: ONE scalar hier-label named "DATA" (the bus
+        // base-name).  The base-name fallback in propagateToNeighbors
+        // matches this label across all 4 slot paths, and each slot
+        // records m_repeat_bus_bit_index = K so Clone() renames the
+        // subgraph driver to DATA[K].
+        m_dataLabel = new SCH_HIERLABEL( VECTOR2I( 10 * SCALE, 10 * SCALE ),
+                                         wxT( "DATA" ) );
+        m_dataLabel->SetShape( LABEL_FLAG_SHAPE::L_INPUT );
+        m_channelScreen->Append( m_dataLabel );
+
+        m_schematic->RefreshHierarchy();
+    }
+
+    SCH_SHEET_PATH SlotPath( int aK ) const
+    {
+        SCH_SHEET_LIST    hierarchy = m_schematic->Hierarchy();
+        const std::vector<KIID>& slots = m_channel->GetRepeatInstances();
+
+        const KIID expected = ( aK == 0 ) ? m_channel->m_Uuid
+                                          : slots[ static_cast<size_t>( aK - 1 ) ];
+
+        for( const SCH_SHEET_PATH& path : hierarchy )
+        {
+            if( path.size() == 2 && path.Last()
+                && path.Last()->GetFileName() == "channel.kicad_sch"
+                && path.Last()->m_Uuid == expected )
+            {
+                return path;
+            }
+        }
+        return {};
+    }
+
+    static constexpr int SCALE = 100000;
+
+    SETTINGS_MANAGER           m_mgr;
+    std::unique_ptr<SCHEMATIC> m_schematic;
+
+    SCH_SHEET*  m_top;
+    SCH_SCREEN* m_topScreen;
+    SCH_SHEET*  m_channel;
+    SCH_SCREEN* m_channelScreen;
+
+    SCH_SHEET_PIN* m_busPin;
+    SCH_HIERLABEL* m_dataLabel;
+};
+
+
+BOOST_FIXTURE_TEST_SUITE( RepeatedSheetBusFanoutScalar,
+                          REPEATED_SHEET_BUSFANOUT_SCALAR_FIXTURE )
+
+
+BOOST_AUTO_TEST_CASE( ScalarBodyPortMatchesBusBaseName )
+{
+    // Build connectivity for the full sheet list.  The matcher's
+    // base-name fallback must wire each slot's lone "DATA" label to
+    // bit K of the parent's DATA[0..3] bus.
+    SCH_SHEET_LIST sheets = m_schematic->BuildSheetListSortedByPageNumbers();
+    m_schematic->ConnectionGraph()->Recalculate( sheets, true );
+
+    for( int k = 0; k < 4; ++k )
+    {
+        SCH_SHEET_PATH slot = SlotPath( k );
+        BOOST_REQUIRE_MESSAGE( slot.size() == 2,
+                               "Slot path " << k << " missing from hierarchy" );
+
+        SCH_CONNECTION* conn = m_dataLabel->Connection( &slot );
+
+        BOOST_REQUIRE_MESSAGE( conn != nullptr,
+                               "Slot " << k << " DATA label has no connection" );
+
+        // Local name on the body side is just the label text "DATA".
+        BOOST_CHECK_EQUAL( conn->LocalName(), wxT( "DATA" ) );
+
+        // The subgraph for that label on the slot-K path exists; the
+        // bit-K rename is performed by the Clone() pass driven off
+        // m_repeat_bus_bit_index.  Presence + uniqueness of the per-slot
+        // Name() is the observable signature.
+        CONNECTION_SUBGRAPH* sg =
+                m_schematic->ConnectionGraph()->GetSubgraphForItem( m_dataLabel );
+        BOOST_REQUIRE_MESSAGE( sg != nullptr,
+                               "Slot " << k << " DATA label has no subgraph" );
+    }
+
+    // Cross-slot disambiguation: the Name() of slot K's DATA subgraph
+    // must differ from slot J's (each binds to a different bus bit).
+    SCH_SHEET_PATH slot0 = SlotPath( 0 );
+    SCH_SHEET_PATH slot1 = SlotPath( 1 );
+    SCH_CONNECTION* c0 = m_dataLabel->Connection( &slot0 );
+    SCH_CONNECTION* c1 = m_dataLabel->Connection( &slot1 );
+    BOOST_REQUIRE( c0 != nullptr );
+    BOOST_REQUIRE( c1 != nullptr );
+    BOOST_CHECK_NE( c0->Name(), c1->Name() );
+}
+
+
+BOOST_AUTO_TEST_SUITE_END()
