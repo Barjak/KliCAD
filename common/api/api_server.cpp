@@ -21,8 +21,10 @@
 #include <fmt/format.h>
 #include <wx/app.h>
 #include <wx/datetime.h>
+#include <wx/dialog.h>
 #include <wx/event.h>
 #include <wx/stdpaths.h>
+#include <wx/window.h>
 
 #include <advanced_config.h>
 #include <api/api_handler.h>
@@ -38,6 +40,7 @@
 #include <string_utils.h>
 
 #include <api/common/envelope.pb.h>
+#include <api/common/commands/base_commands.pb.h>
 
 #ifdef __UNIX__
 #include <sys/file.h>
@@ -139,7 +142,11 @@ void KICAD_API_SERVER::Start()
 
     m_server = std::make_unique<KINNG_REQUEST_SERVER>(
             fmt::format( "ipc://{}", socket.GetFullPath().ToStdString() ) );
-    m_server->SetCallback( [&]( std::string* aRequest ) { onApiRequest( aRequest ); } );
+    m_server->SetCallback(
+            [&]( std::string* aRequest, int aCtxId )
+            {
+                onApiRequest( aRequest, aCtxId );
+            } );
 
     if( !m_server->Start() )
     {
@@ -229,22 +236,114 @@ std::string KICAD_API_SERVER::SocketPath() const
 }
 
 
-void KICAD_API_SERVER::onApiRequest( std::string* aRequest )
+// Local fork: control-plane sentinel.  A request whose header.client_name
+// matches this string is handled SYNCHRONOUSLY on the NNG worker thread
+// (where onApiRequest runs), bypassing the wx main loop.  This is how we
+// dismiss modal dialogs even though the main loop is suspended in the
+// modal's nested event loop: a separate KINNG context (we now run 4 of
+// them concurrently) still accepts requests, so the client can send a
+// dismiss-modal request that fires synchronously here.
+//
+// Currently the only control operation is "dismiss topmost modal".  The
+// implementation finds the topmost shown modal wxDialog and posts a
+// wxEVT_BUTTON/wxID_CANCEL event to it via thread-safe wxQueueEvent —
+// equivalent to the user pressing Escape.  The modal's nested event loop
+// processes the queued event and EndModals.
+static constexpr const char* CONTROL_DISMISS_MODAL =
+        "__control_dismiss_modal__";
+
+
+void KICAD_API_SERVER::onApiRequest( std::string* aRequest, int aCtxId )
 {
     if( !m_readyToReply.load( std::memory_order_acquire ) )
     {
         ApiResponse notHandled;
         notHandled.mutable_status()->set_status( ApiStatusCode::AS_NOT_READY );
         notHandled.mutable_status()->set_error_message( "KiCad is not ready to reply" );
-        m_server->Reply( notHandled.SerializeAsString() );
+        m_server->Reply( notHandled.SerializeAsString(), aCtxId );
         log( "Got incoming request but was not yet ready to reply." );
         return;
+    }
+
+    // Control-plane: parse just enough to check the client_name sentinel.
+    // If it matches, handle inline (we are on an NNG worker thread, not
+    // the wx main loop — so this works even when the wx main loop is
+    // suspended in a modal's nested event loop).
+    {
+        ApiRequest peek;
+
+        if( peek.ParseFromString( *aRequest )
+            && peek.header().client_name() == CONTROL_DISMISS_MODAL )
+        {
+            // Walk wxTopLevelWindows looking for the topmost shown modal.
+            // wxTopLevelWindows is not formally thread-safe per wx docs;
+            // however when a modal is up the main thread is parked in the
+            // modal's loop and the list is not mutating.  For this
+            // control-plane use the residual risk is acceptable.
+            // Find the topmost shown wxDialog.  We DO NOT filter on
+            // IsModal() — some "modal-feeling" dialogs (e.g., KiCad's
+            // error pop-ups built on DIALOG_SHIM with Show() rather
+            // than ShowModal()) report IsModal()==false but block the
+            // user just the same.  Closing any shown dialog from the
+            // outside is what the control plane is for.
+            wxDialog* topModal = nullptr;
+
+            for( wxWindow* w : wxTopLevelWindows )
+            {
+                wxDialog* dlg = dynamic_cast<wxDialog*>( w );
+
+                if( !dlg || !dlg->IsShown() )
+                    continue;
+
+                topModal = dlg;  // keep last; iteration order ⇒ topmost
+            }
+
+            ApiResponse reply;
+            reply.mutable_header()->set_kicad_token( m_token );
+
+            kiapi::common::commands::RunPythonResponse innerReply;
+            innerReply.set_ok( topModal != nullptr );
+
+            if( topModal )
+            {
+                // Dispatch a close-action on the dialog's own handler
+                // queue.  For truly-modal dialogs (ShowModal-ed),
+                // EndModal(wxID_CANCEL) is the way out.  For modeless
+                // dialogs (Show()-ed) — which can still feel modal to
+                // a user — Close() is the right action.  Try EndModal
+                // first; if it's not modal, Close() unconditionally.
+                wxDialog* dlg = topModal;
+                topModal->CallAfter(
+                        [dlg]()
+                        {
+                            if( dlg->IsModal() )
+                                dlg->EndModal( wxID_CANCEL );
+                            else
+                                dlg->Close( /*force=*/true );
+                        } );
+                innerReply.set_stdout( "queued close-action to topmost dialog" );
+            }
+            else
+            {
+                innerReply.set_stdout( "no modal dialog found" );
+            }
+
+            reply.mutable_message()->PackFrom( innerReply );
+            reply.mutable_status()->set_status( ApiStatusCode::AS_OK );
+
+            m_server->Reply( reply.SerializeAsString(), aCtxId );
+            return;
+        }
     }
 
     wxCommandEvent* evt = new wxCommandEvent( API_REQUEST_EVENT );
 
     // We don't actually need write access to this string, but client data is non-const
     evt->SetClientData( static_cast<void*>( aRequest ) );
+
+    // Stash the KINNG context id on the event so handleApiEvent can route
+    // its reply back to the right context.
+    evt->SetInt( aCtxId );
 
     // Takes ownership and frees the wxCommandEvent
     QueueEvent( evt );
@@ -254,11 +353,11 @@ void KICAD_API_SERVER::onApiRequest( std::string* aRequest )
 void KICAD_API_SERVER::handleApiEvent( wxCommandEvent& aEvent )
 {
     std::string& requestString = *static_cast<std::string*>( aEvent.GetClientData() );
-    handleApiRequestString( requestString );
+    handleApiRequestString( requestString, aEvent.GetInt() );
 }
 
 
-void KICAD_API_SERVER::handleApiRequestString( std::string& aRequestString )
+void KICAD_API_SERVER::handleApiRequestString( std::string& aRequestString, int aCtxId )
 {
     ApiRequest request;
 
@@ -268,7 +367,7 @@ void KICAD_API_SERVER::handleApiRequestString( std::string& aRequestString )
         error.mutable_header()->set_kicad_token( m_token );
         error.mutable_status()->set_status( ApiStatusCode::AS_BAD_REQUEST );
         error.mutable_status()->set_error_message( "request could not be parsed" );
-        m_server->Reply( error.SerializeAsString() );
+        m_server->Reply( error.SerializeAsString(), aCtxId );
 
         if( ADVANCED_CFG::GetCfg().m_EnableAPILogging )
             log( "Response (ERROR): " + error.Utf8DebugString() );
@@ -287,7 +386,7 @@ void KICAD_API_SERVER::handleApiRequestString( std::string& aRequestString )
         error.mutable_status()->set_status( ApiStatusCode::AS_TOKEN_MISMATCH );
         error.mutable_status()->set_error_message(
                 "the provided kicad_token did not match this KiCad instance's token" );
-        m_server->Reply( error.SerializeAsString() );
+        m_server->Reply( error.SerializeAsString(), aCtxId );
 
         if( ADVANCED_CFG::GetCfg().m_EnableAPILogging )
             log( "Response (ERROR): " + error.Utf8DebugString() );
@@ -312,7 +411,7 @@ void KICAD_API_SERVER::handleApiRequestString( std::string& aRequestString )
     if( result.has_value() )
     {
         result->mutable_header()->set_kicad_token( m_token );
-        m_server->Reply( result->SerializeAsString() );
+        m_server->Reply( result->SerializeAsString(), aCtxId );
 
         if( ADVANCED_CFG::GetCfg().m_EnableAPILogging )
             log( "Response: " + result->Utf8DebugString() );
@@ -331,7 +430,7 @@ void KICAD_API_SERVER::handleApiRequestString( std::string& aRequestString )
             error.mutable_status()->set_error_message( msg );
         }
 
-        m_server->Reply( error.SerializeAsString() );
+        m_server->Reply( error.SerializeAsString(), aCtxId );
 
         if( ADVANCED_CFG::GetCfg().m_EnableAPILogging )
             log( "Response (ERROR): " + error.Utf8DebugString() );

@@ -22,16 +22,52 @@
 #define KICAD_KINNG_H
 
 #include <atomic>
-#include <condition_variable>
 #include <functional>
+#include <memory>
 #include <mutex>
-#include <thread>
+#include <string>
+#include <vector>
 
 
+#include <nng/nng.h>
+
+
+/**
+ * REQ/REP server with multiple concurrent contexts.
+ *
+ * Each context (`nng_ctx`) is an independent request/reply pipeline on the
+ * shared REP socket.  This lets the server have N requests in flight
+ * simultaneously without violating NNG's per-context lockstep — different
+ * clients (or different roles from the same client) can each occupy their own
+ * context.
+ *
+ * The motivating use case is modal-dialog dismissal in the embedded IPC
+ * server: when one context is parked waiting for the wx main loop to dispatch
+ * a request (which is blocked because a modal dialog has suspended the loop),
+ * a *second* context can still receive a "dismiss-modal" request, handle it
+ * inline on an NNG worker thread, and reply immediately.  Without multiple
+ * contexts, the listener would be stuck in `nng_recv` and the dismiss request
+ * would never be received.
+ *
+ * The user callback is invoked when a request lands on any context.  The
+ * `int ctxId` argument tells the user which context the request came in on;
+ * the same id must be passed to `Reply()` so the response routes back to the
+ * originating client.
+ *
+ * The callback is called on an NNG worker thread, NOT the thread that
+ * constructed this server.  All work the callback does must be thread-safe
+ * with respect to any other code running concurrently.  In particular, the
+ * existing pattern of `wxQueueEvent`-ing into the wx main loop is fine
+ * (wxQueueEvent is documented thread-safe).
+ *
+ * Reply may be called from any thread.  It does not block waiting for the
+ * send to complete; the send completes asynchronously and a new recv is
+ * automatically started on that context.
+ */
 class KINNG_REQUEST_SERVER
 {
 public:
-    KINNG_REQUEST_SERVER( const std::string& aSocketUrl );
+    KINNG_REQUEST_SERVER( const std::string& aSocketUrl, int aNumContexts = 4 );
 
     ~KINNG_REQUEST_SERVER();
 
@@ -41,30 +77,41 @@ public:
 
     bool Running() const;
 
-    void SetCallback( std::function<void(std::string*)> aFunc ) { m_callback = aFunc; }
+    void SetCallback( std::function<void(std::string*, int)> aFunc )
+    {
+        m_callback = std::move( aFunc );
+    }
 
-    void Reply( const std::string& aReply );
+    /// Send a reply on the given context.  ``aCtxId`` must match the value
+    /// passed to the callback for the request being replied to.  May be called
+    /// from any thread; non-blocking.
+    void Reply( const std::string& aReply, int aCtxId );
 
     const std::string& SocketPath() const { return m_socketUrl; }
 
 private:
-    void listenThread();
+    struct ContextState;
 
-    std::thread m_thread;
+    static void aioCallback( void* aArg );
+    void onAioReady( ContextState* aState );
+    void startRecv( ContextState* aState );
 
     std::atomic<bool> m_shutdown;
 
     std::string m_socketUrl;
 
-    std::function<void(std::string*)> m_callback;
+    std::function<void(std::string*, int)> m_callback;
 
-    std::string m_sharedMessage;
+    int m_numContexts;
 
-    std::string m_pendingReply;
+    std::vector<std::unique_ptr<ContextState>> m_contexts;
 
-    std::condition_variable m_replyReady;
+    // The shared REP socket on which all contexts operate.
+    nng_socket m_socket{};
 
-    std::mutex m_mutex;
+    std::atomic<bool> m_running;
+
+    std::mutex m_replyMutex;
 };
 
 #endif //KICAD_KINNG_H

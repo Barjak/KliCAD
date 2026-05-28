@@ -85,21 +85,25 @@ public:
 private:
 
     /**
-     * Callback that executes on the server thread and generates an event that will be handled by
-     * the wxWidgets event loop to process an incoming request.  Temporarily takes ownership of the
-     * request pointer so that it can be passed through the event system.
+     * Callback that executes on an NNG worker thread.  For the control-plane
+     * sentinel (see CONTROL_DISMISS_MODAL in api_server.cpp), handles inline
+     * and Reply()s synchronously.  Otherwise generates a wxCommandEvent
+     * (carrying the request bytes + ctxId) that will be handled by the wx
+     * event loop later.
      *
      * @param aRequest is a pointer to a string containing bytes that came in over the wire
+     * @param aCtxId   is the KINNG context id; must be passed back to Reply()
      */
-    void onApiRequest( std::string* aRequest );
+    void onApiRequest( std::string* aRequest, int aCtxId );
 
     /**
      * Event handler that receives the event on the main thread sent by onApiRequest
-     * @param aEvent will contain a pointer to an incoming API request string in the client data
+     * @param aEvent will contain a pointer to an incoming API request string in the client data,
+     *               and the ctxId via aEvent.GetInt().
      */
     void handleApiEvent( wxCommandEvent& aEvent );
 
-    void handleApiRequestString( std::string& aRequestString );
+    void handleApiRequestString( std::string& aRequestString, int aCtxId );
 
     void log( const std::string& aOutput );
 
