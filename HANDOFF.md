@@ -1,4 +1,17 @@
-# KliCAD handoff — 2026-05-17
+# KliCAD handoff — 2026-05-17 (orientation only)
+
+> ⚠ **Current state is in
+> `~/projects/klicad-python/docs/plans/STATUS.md`** (last updated
+> 2026-05-28).  Read that first if you're picking up active work.
+> This file remains useful for project shape, architecture, binding
+> patterns, and conventions — but the "Open crashes" / "Recent crashes"
+> sections below are stale: every crash listed there has been fixed,
+> and several new crash fixes landed in 2026-05-27/28 that aren't
+> recorded here.  See STATUS.md "Crash fixes" subsection for the
+> current list.  The "Phase B is preliminary / blocked by
+> UnsavedChangesDialog" note below is also stale — the full
+> multi-channel + ratsnest arc (R0–C.7) has landed on
+> `loop/integration-7` and `to_schematic` round-trips cleanly.
 
 You're picking up KliCAD development. This doc covers project shape, current
 state, recent crashes (with full stack traces and repro scripts), conventions
