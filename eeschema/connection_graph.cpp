@@ -3981,7 +3981,16 @@ bool CONNECTION_GRAPH::ercCheckMultipleDrivers( const CONNECTION_SUBGRAPH* aSubg
                 ercItem->SetErrorMessage( msg );
 
                 SCH_MARKER* marker = new SCH_MARKER( std::move( ercItem ), driver->GetPosition() );
-                aSubgraph->m_sheet.LastScreen()->Append( marker );
+
+                // P5d: resolve screen via SCHEMATIC + LastInstance —
+                // see the comment on the wire-dangling site below.
+                SCH_SCREEN* markerScreen = m_schematic
+                        ? m_schematic->ResolveSheetScreen(
+                                  aSubgraph->m_sheet.LastInstance() )
+                        : aSubgraph->m_sheet.LastScreen();
+
+                if( markerScreen )
+                    markerScreen->Append( marker );
 
                 return false;
             }
@@ -4577,7 +4586,16 @@ bool CONNECTION_GRAPH::ercCheckFloatingWires( const CONNECTION_SUBGRAPH* aSubgra
 
     if( !wires.empty() )
     {
-        SCH_SCREEN* screen = aSubgraph->m_sheet.LastScreen();
+        // P5d: resolve the screen via SCHEMATIC + LastInstance so we
+        // don't dereference a possibly-freed synthetic-clone pointer
+        // through SCH_SHEET_PATH::LastScreen (which goes through
+        // m_sheets.back()->GetScreen()).  Synthetic clones share the
+        // template's screen anyway, so resolving the template and
+        // taking ITS screen is functionally identical.
+        SCH_SCREEN* screen = m_schematic
+                ? m_schematic->ResolveSheetScreen(
+                          aSubgraph->m_sheet.LastInstance() )
+                : aSubgraph->m_sheet.LastScreen();
 
         std::shared_ptr<ERC_ITEM> ercItem = ERC_ITEM::Create( ERCE_WIRE_DANGLING );
         ercItem->SetSheetSpecificPath( sheet );
@@ -4641,7 +4659,16 @@ bool CONNECTION_GRAPH::ercCheckLabels( const CONNECTION_SUBGRAPH* aSubgraph )
                     ercItem->SetItems( aText );
 
                     SCH_MARKER* marker = new SCH_MARKER( std::move( ercItem ), aText->GetPosition() );
-                    aSubgraph->m_sheet.LastScreen()->Append( marker );
+
+                    // P5d: resolve screen via SCHEMATIC + LastInstance —
+                    // see comment on the wire-dangling site above.
+                    SCH_SCREEN* markerScreen = m_schematic
+                            ? m_schematic->ResolveSheetScreen(
+                                      aSubgraph->m_sheet.LastInstance() )
+                            : aSubgraph->m_sheet.LastScreen();
+
+                    if( markerScreen )
+                        markerScreen->Append( marker );
                 }
             };
 
