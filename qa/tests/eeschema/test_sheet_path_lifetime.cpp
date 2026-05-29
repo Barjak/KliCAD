@@ -167,20 +167,29 @@ BOOST_AUTO_TEST_CASE( PathSurvivesRefreshHierarchyCycle )
 
     SCH_SHEET_PATH cached = CaptureSyntheticSlotPath();
     KIID            slotKiid = cached.Last()->m_Uuid;
+    KIID            templateKiid = cached.Last()->GetTemplate()->m_Uuid;
 
     // Force ClearRepeatCloneCache() + remint at new addresses.  This
     // is exactly the sequence that fires from any SCH_COMMIT::Push
     // touching a multi-channel sheet's contents.
     m_schematic.RefreshHierarchy();
 
-    // The cached path must still answer correctly.  Pre-refactor,
-    // this is undefined behavior (heap-use-after-free).  Post-refactor,
-    // identity is by KIID so the resolution finds the freshly-minted
-    // clone bearing the same slot KIID.
-    SCH_SHEET* last = cached.Last();
-    BOOST_REQUIRE( last != nullptr );
-    BOOST_CHECK( last->IsSynthetic() );
-    BOOST_CHECK_EQUAL( last->m_Uuid, slotKiid );
+    // The cached path must still answer correctly when consulted via
+    // the safe API.  Pre-refactor: cached.Last() returns a dangling
+    // SCH_SHEET* and any deref is heap-use-after-free.  Post-refactor:
+    // cached.LastInstance() reads from m_instances (which holds
+    // identity by KIID, not by address) and the value remains valid.
+    SCH_SHEET_INSTANCE last = cached.LastInstance();
+
+    BOOST_CHECK_EQUAL( last.SlotKiid(),     slotKiid );
+    BOOST_CHECK_EQUAL( last.TemplateKiid(), templateKiid );
+    BOOST_CHECK( !last.IsTemplateSlot() );  // synthetic slot K>0
+
+    // The instance can be resolved against SCHEMATIC to recover a
+    // live SCH_SHEET* for the freshly-minted clone of the same slot.
+    SCH_SHEET* resolved = m_schematic.ResolveSheetTemplate( last );
+    BOOST_CHECK( resolved != nullptr );
+    BOOST_CHECK_EQUAL( resolved->m_Uuid, templateKiid );
 }
 
 
@@ -204,7 +213,9 @@ BOOST_AUTO_TEST_CASE( StaleMapKeyAfterCacheClear )
     int idx = 0;
     for( const SCH_SHEET_PATH& path : m_schematic.Hierarchy() )
     {
-        if( path.size() == 2 && path.Last()->IsSynthetic() )
+        SCH_SHEET_INSTANCE leaf = path.LastInstance();
+
+        if( path.size() == 2 && !leaf.IsTemplateSlot() )
             map.emplace( path, idx++ );
     }
 
@@ -216,12 +227,14 @@ BOOST_AUTO_TEST_CASE( StaleMapKeyAfterCacheClear )
 
     // Re-look-up each synthetic-slot path in the FRESH hierarchy.
     // After the refactor every fresh path equals its pre-refresh
-    // counterpart (same KIID list), so every lookup must hit.
+    // counterpart by KIID, so every lookup must hit.
     size_t hits = 0;
 
     for( const SCH_SHEET_PATH& fresh : m_schematic.Hierarchy() )
     {
-        if( fresh.size() == 2 && fresh.Last()->IsSynthetic() )
+        SCH_SHEET_INSTANCE leaf = fresh.LastInstance();
+
+        if( fresh.size() == 2 && !leaf.IsTemplateSlot() )
         {
             if( map.find( fresh ) != map.end() )
                 hits++;
@@ -422,17 +435,20 @@ BOOST_AUTO_TEST_CASE( ConnectionMapPathReadsSurviveRefresh )
     // Force the clone churn.
     m_schematic.RefreshHierarchy();
 
-    // Iterate the long-lived container.  Pre-refactor: every
-    // call to p.Last() through the stored path is UAF on the
-    // synthetic-clone entries.  Post-refactor: resolution is
-    // KIID-keyed and returns the freshly-minted clone.
+    // Iterate the long-lived container via the SAFE API
+    // (LastInstance / ResolveSheetTemplate).  Pre-refactor: every
+    // call to p.Last() through the stored path was UAF on the
+    // synthetic-clone entries.  Post-refactor: LastInstance reads
+    // from m_instances (KIID-valued), and resolution against the
+    // live SCHEMATIC returns either a fresh clone or the template,
+    // never a dangling pointer.
     size_t readable = 0;
 
     for( const auto& [p, _idx] : longLived )
     {
-        SCH_SHEET* last = p.Last();
+        SCH_SHEET_INSTANCE inst = p.LastInstance();
 
-        if( last )
+        if( m_schematic.ResolveSheetTemplate( inst ) )
             readable++;
     }
 
