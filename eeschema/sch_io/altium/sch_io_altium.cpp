@@ -564,7 +564,7 @@ SCH_SHEET* SCH_IO_ALTIUM::LoadSchematicFile( const wxString& aFileName, SCHEMATI
     SCH_SCREEN* rootScreen = m_rootSheet->GetScreen();
     wxCHECK( rootScreen, nullptr );
 
-    SCH_SHEET_INSTANCE sheetInstance;
+    SCH_SHEET_INSTANCE_DATA sheetInstance;
 
     sheetInstance.m_Path = m_sheetPath.Path();
     sheetInstance.m_PageNumber = wxT( "#" );
@@ -3917,7 +3917,7 @@ void SCH_IO_ALTIUM::ParseSheetSymbol( int aIndex, const std::map<wxString, wxStr
     SCH_SCREEN* rootScreen = m_rootSheet->GetScreen();
     wxCHECK( rootScreen, /* void */ );
 
-    SCH_SHEET_INSTANCE sheetInstance;
+    SCH_SHEET_INSTANCE_DATA sheetInstance;
 
     sheetInstance.m_Path = sheetpath.Path();
     sheetInstance.m_PageNumber = wxT( "#" );

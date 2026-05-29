@@ -2713,7 +2713,7 @@ SCH_REFERENCE_LIST DIALOG_SYMBOL_FIELDS_TABLE::getSheetSymbolReferences( SCH_SHE
     SCH_REFERENCE_LIST sheetRefs;
 
     // We need to operate on all instances of the sheet
-    for( const SCH_SHEET_INSTANCE& instance : aSheet.GetInstances() )
+    for( const SCH_SHEET_INSTANCE_DATA& instance : aSheet.GetInstances() )
     {
         // For every sheet instance we need to get the current schematic sheet
         // instance that matches that particular sheet path from the root

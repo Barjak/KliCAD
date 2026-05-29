@@ -263,7 +263,7 @@ tl::expected<bool, ApiResponseStatus> UnpackSheet( SCH_SHEET* aOutput, const kia
 
     if( !instancePath.empty() )
     {
-        SCH_SHEET_INSTANCE instance;
+        SCH_SHEET_INSTANCE_DATA instance;
         instance.m_Path = instancePath;
         instance.m_PageNumber = wxString::FromUTF8( aInput.page_number() );
 

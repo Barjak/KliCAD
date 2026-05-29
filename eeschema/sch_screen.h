@@ -525,7 +525,7 @@ public:
         return m_symbolInstances;
     }
 
-    const std::vector<SCH_SHEET_INSTANCE>& GetSheetInstances() const
+    const std::vector<SCH_SHEET_INSTANCE_DATA>& GetSheetInstances() const
     {
         return m_sheetInstances;
     }
@@ -725,7 +725,7 @@ private:
      *          schematic files.
      */
     std::vector<SCH_SYMBOL_INSTANCE> m_symbolInstances;
-    std::vector<SCH_SHEET_INSTANCE> m_sheetInstances;
+    std::vector<SCH_SHEET_INSTANCE_DATA> m_sheetInstances;
 
     /**
      * A unique identifier for each schematic file.

@@ -595,7 +595,7 @@ HANDLER_RESULT<ItemRequestStatus> API_HANDLER_SCH::handleCreateUpdateItemsIntern
                     result.has_value() )
                 {
                     unpacked = *result;
-                    SCH_SHEET_INSTANCE instance;
+                    SCH_SHEET_INSTANCE_DATA instance;
 
                     if( !sheet->GetInstances().empty() )
                         instance = *sheet->GetInstances().begin();

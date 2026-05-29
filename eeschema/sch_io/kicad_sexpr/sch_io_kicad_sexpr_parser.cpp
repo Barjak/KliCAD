@@ -2549,7 +2549,7 @@ void SCH_IO_KICAD_SEXPR_PARSER::parseSchSheetInstances( SCH_SHEET* aRootSheet, S
         {
             NeedSYMBOL();
 
-            SCH_SHEET_INSTANCE instance;
+            SCH_SHEET_INSTANCE_DATA instance;
 
             instance.m_Path = KIID_PATH( FromUTF8() );
 
@@ -3855,7 +3855,7 @@ SCH_SHEET* SCH_IO_KICAD_SEXPR_PARSER::parseSheet()
 
         case T_instances:
         {
-            std::vector<SCH_SHEET_INSTANCE> instances;
+            std::vector<SCH_SHEET_INSTANCE_DATA> instances;
 
             for( token = NextTok(); token != T_RIGHT; token = NextTok() )
             {
@@ -3881,7 +3881,7 @@ SCH_SHEET* SCH_IO_KICAD_SEXPR_PARSER::parseSheet()
                     if( token != T_path )
                         Expecting( "path" );
 
-                    SCH_SHEET_INSTANCE instance;
+                    SCH_SHEET_INSTANCE_DATA instance;
 
                     instance.m_ProjectName = projectName;
 

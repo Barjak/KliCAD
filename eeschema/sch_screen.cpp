@@ -1650,9 +1650,9 @@ void SCH_SCREEN::PruneOrphanedSheetInstances( const wxString& aProjectName,
         wxCHECK2( sheet, continue );
 
         std::set<KIID_PATH> pathsToPrune;
-        const std::vector<SCH_SHEET_INSTANCE> instances = sheet->GetInstances();
+        const std::vector<SCH_SHEET_INSTANCE_DATA> instances = sheet->GetInstances();
 
-        for( const SCH_SHEET_INSTANCE& instance : instances )
+        for( const SCH_SHEET_INSTANCE_DATA& instance : instances )
         {
             // Ignore instance paths from other projects.
             if( aProjectName != instance.m_ProjectName )
@@ -1868,9 +1868,9 @@ std::set<wxString> SCH_SCREEN::GetVariantNames() const
 
         wxCHECK2( sheet, continue );
 
-        const std::vector<SCH_SHEET_INSTANCE> sheetInstances = sheet->GetInstances();
+        const std::vector<SCH_SHEET_INSTANCE_DATA> sheetInstances = sheet->GetInstances();
 
-        for( const SCH_SHEET_INSTANCE& instance : sheetInstances )
+        for( const SCH_SHEET_INSTANCE_DATA& instance : sheetInstances )
         {
             for( const auto& [name, variant] : instance.m_Variants )
                 variantNames.emplace( name );
@@ -1911,9 +1911,9 @@ void SCH_SCREEN::DeleteVariant( const wxString& aVariantName, SCH_COMMIT* aCommi
 
         wxCHECK2( sheet, continue );
 
-        std::vector<SCH_SHEET_INSTANCE> sheetInstances = sheet->GetInstances();
+        std::vector<SCH_SHEET_INSTANCE_DATA> sheetInstances = sheet->GetInstances();
 
-        for( SCH_SHEET_INSTANCE& instance : sheetInstances )
+        for( SCH_SHEET_INSTANCE_DATA& instance : sheetInstances )
         {
             if( instance.m_Variants.contains( aVariantName ) )
             {
@@ -1958,9 +1958,9 @@ void SCH_SCREEN::RenameVariant( const wxString& aOldName, const wxString& aNewNa
 
         wxCHECK2( sheet, continue );
 
-        std::vector<SCH_SHEET_INSTANCE> sheetInstances = sheet->GetInstances();
+        std::vector<SCH_SHEET_INSTANCE_DATA> sheetInstances = sheet->GetInstances();
 
-        for( SCH_SHEET_INSTANCE& instance : sheetInstances )
+        for( SCH_SHEET_INSTANCE_DATA& instance : sheetInstances )
         {
             if( instance.m_Variants.contains( aOldName ) )
             {
@@ -2005,9 +2005,9 @@ void SCH_SCREEN::CopyVariant( const wxString& aSourceVariant, const wxString& aN
 
         wxCHECK2( sheet, continue );
 
-        std::vector<SCH_SHEET_INSTANCE> sheetInstances = sheet->GetInstances();
+        std::vector<SCH_SHEET_INSTANCE_DATA> sheetInstances = sheet->GetInstances();
 
-        for( SCH_SHEET_INSTANCE& instance : sheetInstances )
+        for( SCH_SHEET_INSTANCE_DATA& instance : sheetInstances )
         {
             if( instance.m_Variants.contains( aSourceVariant ) )
             {

@@ -616,7 +616,7 @@ void SCH_SHEET::SetFieldText( const wxString& aFieldName, const wxString& aField
         }
         else
         {
-            SCH_SHEET_INSTANCE* instance = getInstance( *aPath );
+            SCH_SHEET_INSTANCE_DATA* instance = getInstance( *aPath );
 
             wxCHECK( instance, /* void */ );
 
@@ -666,7 +666,7 @@ wxString SCH_SHEET::GetFieldText( const wxString& aFieldName, const SCH_SHEET_PA
         }
         else
         {
-            const SCH_SHEET_INSTANCE* instance = getInstance( *aPath );
+            const SCH_SHEET_INSTANCE_DATA* instance = getInstance( *aPath );
 
             if( instance->m_Variants.contains( aVariantName )
               && instance->m_Variants.at( aVariantName ).m_Fields.contains( aFieldName ) )
@@ -1653,7 +1653,7 @@ SCH_SHEET& SCH_SHEET::operator=( const SCH_ITEM& aItem )
             m_pins.back()->SetParent( this );
         }
 
-        for( const SCH_SHEET_INSTANCE& instance : sheet->m_instances )
+        for( const SCH_SHEET_INSTANCE_DATA& instance : sheet->m_instances )
             m_instances.emplace_back( instance );
     }
 
@@ -1699,9 +1699,9 @@ void SCH_SHEET::RemoveInstance( const KIID_PATH& aInstancePath )
 }
 
 
-void SCH_SHEET::AddInstance( const SCH_SHEET_INSTANCE& aInstance )
+void SCH_SHEET::AddInstance( const SCH_SHEET_INSTANCE_DATA& aInstance )
 {
-    SCH_SHEET_INSTANCE oldInstance;
+    SCH_SHEET_INSTANCE_DATA oldInstance;
 
     if( getInstance( oldInstance, aInstance.m_Path ) )
         RemoveInstance( aInstance.m_Path );
@@ -1713,7 +1713,7 @@ void SCH_SHEET::AddInstance( const SCH_SHEET_INSTANCE& aInstance )
 
 bool SCH_SHEET::addInstance( const KIID_PATH& aPath )
 {
-    for( const SCH_SHEET_INSTANCE& instance : m_instances )
+    for( const SCH_SHEET_INSTANCE_DATA& instance : m_instances )
     {
         // if aSheetPath is found, nothing to do:
         if( instance.m_Path == aPath )
@@ -1724,7 +1724,7 @@ bool SCH_SHEET::addInstance( const KIID_PATH& aPath )
                 aPath.AsString(),
                 ( GetName().IsEmpty() ) ? wxString( wxT( "root" ) ) : GetName() );
 
-    SCH_SHEET_INSTANCE instance;
+    SCH_SHEET_INSTANCE_DATA instance;
 
     instance.m_Path = aPath;
 
@@ -1734,10 +1734,10 @@ bool SCH_SHEET::addInstance( const KIID_PATH& aPath )
 }
 
 
-bool SCH_SHEET::getInstance( SCH_SHEET_INSTANCE& aInstance, const KIID_PATH& aSheetPath,
+bool SCH_SHEET::getInstance( SCH_SHEET_INSTANCE_DATA& aInstance, const KIID_PATH& aSheetPath,
                              bool aTestFromEnd ) const
 {
-    for( const SCH_SHEET_INSTANCE& instance : m_instances )
+    for( const SCH_SHEET_INSTANCE_DATA& instance : m_instances )
     {
         if( !aTestFromEnd )
         {
@@ -1758,9 +1758,9 @@ bool SCH_SHEET::getInstance( SCH_SHEET_INSTANCE& aInstance, const KIID_PATH& aSh
 }
 
 
-SCH_SHEET_INSTANCE* SCH_SHEET::getInstance( const KIID_PATH& aSheetPath )
+SCH_SHEET_INSTANCE_DATA* SCH_SHEET::getInstance( const KIID_PATH& aSheetPath )
 {
-    for( SCH_SHEET_INSTANCE& instance : m_instances )
+    for( SCH_SHEET_INSTANCE_DATA& instance : m_instances )
     {
         if( instance.m_Path == aSheetPath )
             return &instance;
@@ -1770,9 +1770,9 @@ SCH_SHEET_INSTANCE* SCH_SHEET::getInstance( const KIID_PATH& aSheetPath )
 }
 
 
-const SCH_SHEET_INSTANCE* SCH_SHEET::getInstance( const KIID_PATH& aSheetPath ) const
+const SCH_SHEET_INSTANCE_DATA* SCH_SHEET::getInstance( const KIID_PATH& aSheetPath ) const
 {
-    for( const SCH_SHEET_INSTANCE& instance : m_instances )
+    for( const SCH_SHEET_INSTANCE_DATA& instance : m_instances )
     {
         if( instance.m_Path == aSheetPath )
             return &instance;
@@ -1784,7 +1784,7 @@ const SCH_SHEET_INSTANCE* SCH_SHEET::getInstance( const KIID_PATH& aSheetPath ) 
 
 bool SCH_SHEET::HasRootInstance() const
 {
-    for( const SCH_SHEET_INSTANCE& instance : m_instances )
+    for( const SCH_SHEET_INSTANCE_DATA& instance : m_instances )
     {
         if( instance.m_Path.size() == 0 )
             return true;
@@ -1794,9 +1794,9 @@ bool SCH_SHEET::HasRootInstance() const
 }
 
 
-const SCH_SHEET_INSTANCE& SCH_SHEET::GetRootInstance() const
+const SCH_SHEET_INSTANCE_DATA& SCH_SHEET::GetRootInstance() const
 {
-    for( const SCH_SHEET_INSTANCE& instance : m_instances )
+    for( const SCH_SHEET_INSTANCE_DATA& instance : m_instances )
     {
         if( instance.m_Path.size() == 0 )
             return instance;
@@ -1804,7 +1804,7 @@ const SCH_SHEET_INSTANCE& SCH_SHEET::GetRootInstance() const
 
     wxFAIL;
 
-    static SCH_SHEET_INSTANCE dummy;
+    static SCH_SHEET_INSTANCE_DATA dummy;
 
     return dummy;
 }
@@ -1814,7 +1814,7 @@ wxString SCH_SHEET::getPageNumber( const KIID_PATH& aParentPath ) const
 {
     wxString pageNumber;
 
-    for( const SCH_SHEET_INSTANCE& instance : m_instances )
+    for( const SCH_SHEET_INSTANCE_DATA& instance : m_instances )
     {
         if( instance.m_Path == aParentPath )
         {
@@ -1829,7 +1829,7 @@ wxString SCH_SHEET::getPageNumber( const KIID_PATH& aParentPath ) const
 
 void SCH_SHEET::setPageNumber( const KIID_PATH& aPath, const wxString& aPageNumber )
 {
-    for( SCH_SHEET_INSTANCE& instance : m_instances )
+    for( SCH_SHEET_INSTANCE_DATA& instance : m_instances )
     {
         if( instance.m_Path == aPath )
         {
@@ -1850,15 +1850,15 @@ bool SCH_SHEET::HasPageNumberChanges( const SCH_SHEET& aOther ) const
     if( GetInstances().size() != aOther.GetInstances().size() )
         return true;
 
-    std::vector<SCH_SHEET_INSTANCE> instances = GetInstances();
-    std::vector<SCH_SHEET_INSTANCE> otherInstances = aOther.GetInstances();
+    std::vector<SCH_SHEET_INSTANCE_DATA> instances = GetInstances();
+    std::vector<SCH_SHEET_INSTANCE_DATA> otherInstances = aOther.GetInstances();
 
     // Sorting may not be necessary but there is no guarantee that sheet
     // instance data will be in the correct KIID_PATH order.  We should
     // probably use a std::map instead of a std::vector to store the sheet
     // instance data.
     std::sort( instances.begin(), instances.end(),
-               []( const SCH_SHEET_INSTANCE& aLhs, const SCH_SHEET_INSTANCE& aRhs )
+               []( const SCH_SHEET_INSTANCE_DATA& aLhs, const SCH_SHEET_INSTANCE_DATA& aRhs )
                {
                    if( aLhs.m_Path > aRhs.m_Path )
                        return true;
@@ -1866,7 +1866,7 @@ bool SCH_SHEET::HasPageNumberChanges( const SCH_SHEET& aOther ) const
                    return false;
                } );
     std::sort( otherInstances.begin(), otherInstances.end(),
-               []( const SCH_SHEET_INSTANCE& aLhs, const SCH_SHEET_INSTANCE& aRhs )
+               []( const SCH_SHEET_INSTANCE_DATA& aLhs, const SCH_SHEET_INSTANCE_DATA& aRhs )
                {
                    if( aLhs.m_Path > aRhs.m_Path )
                        return true;
@@ -1998,7 +1998,7 @@ double SCH_SHEET::Similarity( const SCH_ITEM& aOther ) const
 
 void SCH_SHEET::AddVariant( const SCH_SHEET_PATH& aInstance, const SCH_SHEET_VARIANT& aVariant )
 {
-    SCH_SHEET_INSTANCE* instance = getInstance( aInstance );
+    SCH_SHEET_INSTANCE_DATA* instance = getInstance( aInstance );
 
     // The instance path must already exist.
     if( !instance )
@@ -2010,7 +2010,7 @@ void SCH_SHEET::AddVariant( const SCH_SHEET_PATH& aInstance, const SCH_SHEET_VAR
 
 void SCH_SHEET::DeleteVariant( const KIID_PATH& aPath, const wxString& aVariantName )
 {
-    SCH_SHEET_INSTANCE* instance = getInstance( aPath );
+    SCH_SHEET_INSTANCE_DATA* instance = getInstance( aPath );
 
     // The instance path must already exist.
     if( !instance || !instance->m_Variants.contains( aVariantName ) )
@@ -2023,7 +2023,7 @@ void SCH_SHEET::DeleteVariant( const KIID_PATH& aPath, const wxString& aVariantN
 void SCH_SHEET::RenameVariant( const KIID_PATH& aPath, const wxString& aOldName,
                                const wxString& aNewName )
 {
-    SCH_SHEET_INSTANCE* instance = getInstance( aPath );
+    SCH_SHEET_INSTANCE_DATA* instance = getInstance( aPath );
 
     // The instance path must already exist and contain the old variant.
     if( !instance || !instance->m_Variants.contains( aOldName ) )
@@ -2040,7 +2040,7 @@ void SCH_SHEET::RenameVariant( const KIID_PATH& aPath, const wxString& aOldName,
 void SCH_SHEET::CopyVariant( const KIID_PATH& aPath, const wxString& aSourceVariant,
                              const wxString& aNewVariant )
 {
-    SCH_SHEET_INSTANCE* instance = getInstance( aPath );
+    SCH_SHEET_INSTANCE_DATA* instance = getInstance( aPath );
 
     // The instance path must already exist and contain the source variant.
     if( !instance || !instance->m_Variants.contains( aSourceVariant ) )
@@ -2061,7 +2061,7 @@ void SCH_SHEET::SetDNP( bool aEnable, const SCH_SHEET_PATH* aInstance, const wxS
         return;
     }
 
-    SCH_SHEET_INSTANCE* instance = getInstance( *aInstance );
+    SCH_SHEET_INSTANCE_DATA* instance = getInstance( *aInstance );
 
     wxCHECK_MSG( instance, /* void */,
                  wxString::Format( wxS( "Cannot get DNP attribute for invalid sheet path '%s'." ),
@@ -2094,7 +2094,7 @@ bool SCH_SHEET::GetDNP( const SCH_SHEET_PATH* aInstance, const wxString& aVarian
     if( !aInstance || aVariantName.IsEmpty() )
         return m_DNP;
 
-    SCH_SHEET_INSTANCE instance;
+    SCH_SHEET_INSTANCE_DATA instance;
 
     if( !getInstance( instance, aInstance->Path() ) )
         return m_DNP;
@@ -2127,7 +2127,7 @@ void SCH_SHEET::SetExcludedFromSim( bool aEnable, const SCH_SHEET_PATH* aInstanc
         return;
     }
 
-    SCH_SHEET_INSTANCE* instance = getInstance( *aInstance );
+    SCH_SHEET_INSTANCE_DATA* instance = getInstance( *aInstance );
 
     wxCHECK_MSG( instance, /* void */,
                  wxString::Format( wxS( "Cannot get m_excludedFromSim attribute for invalid sheet path '%s'." ),
@@ -2161,7 +2161,7 @@ bool SCH_SHEET::GetExcludedFromSim( const SCH_SHEET_PATH* aInstance, const wxStr
     if( !aInstance || aVariantName.IsEmpty() )
         return m_excludedFromSim;
 
-    SCH_SHEET_INSTANCE instance;
+    SCH_SHEET_INSTANCE_DATA instance;
 
     if( !getInstance( instance, aInstance->Path() ) )
         return m_excludedFromSim;
@@ -2194,7 +2194,7 @@ void SCH_SHEET::SetExcludedFromBOM( bool aEnable, const SCH_SHEET_PATH* aInstanc
         return;
     }
 
-    SCH_SHEET_INSTANCE* instance = getInstance( *aInstance );
+    SCH_SHEET_INSTANCE_DATA* instance = getInstance( *aInstance );
 
     wxCHECK_MSG( instance, /* void */,
                  wxString::Format( wxS( "Cannot get m_excludedFromBOM attribute for invalid sheet path '%s'." ),
@@ -2228,7 +2228,7 @@ bool SCH_SHEET::GetExcludedFromBOM( const SCH_SHEET_PATH* aInstance, const wxStr
     if( !aInstance || aVariantName.IsEmpty() )
         return m_excludedFromBOM;
 
-    SCH_SHEET_INSTANCE instance;
+    SCH_SHEET_INSTANCE_DATA instance;
 
     if( !getInstance( instance, aInstance->Path() ) )
         return m_excludedFromBOM;

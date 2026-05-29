@@ -37,7 +37,7 @@ class KIWAY;
 class LINE_READER;
 class SCH_SCREEN;
 class SCH_SHEET;
-struct SCH_SHEET_INSTANCE;
+struct SCH_SHEET_INSTANCE_DATA;
 class SCH_BITMAP;
 class SCH_JUNCTION;
 class SCH_NO_CONNECT;
@@ -167,7 +167,7 @@ private:
     void saveTextBox( SCH_TEXTBOX* aText );
     void saveTable( SCH_TABLE* aTable );
     void saveGroup( SCH_GROUP* aGroup );
-    void saveInstances( const std::vector<SCH_SHEET_INSTANCE>& aSheets );
+    void saveInstances( const std::vector<SCH_SHEET_INSTANCE_DATA>& aSheets );
 
     void cacheLib( const wxString& aLibraryFileName, const std::map<std::string, UTF8>* aProperties );
     bool isBuffering( const std::map<std::string, UTF8>* aProperties );

@@ -1691,7 +1691,7 @@ void SCH_SHEET_LIST::UpdateSymbolInstanceData(
 }
 
 
-void SCH_SHEET_LIST::UpdateSheetInstanceData( const std::vector<SCH_SHEET_INSTANCE>& aSheetInstances )
+void SCH_SHEET_LIST::UpdateSheetInstanceData( const std::vector<SCH_SHEET_INSTANCE_DATA>& aSheetInstances )
 {
 
     for( SCH_SHEET_PATH& path : *this )
@@ -1701,7 +1701,7 @@ void SCH_SHEET_LIST::UpdateSheetInstanceData( const std::vector<SCH_SHEET_INSTAN
         wxCHECK2( sheet && path.Last(), continue );
 
         auto it = std::find_if( aSheetInstances.begin(), aSheetInstances.end(),
-                                [&path]( const SCH_SHEET_INSTANCE& r ) -> bool
+                                [&path]( const SCH_SHEET_INSTANCE_DATA& r ) -> bool
                                 {
                                     return path.Path() == r.m_Path;
                                 } );
@@ -1732,9 +1732,9 @@ std::vector<KIID_PATH> SCH_SHEET_LIST::GetPaths() const
 }
 
 
-std::vector<SCH_SHEET_INSTANCE> SCH_SHEET_LIST::GetSheetInstances() const
+std::vector<SCH_SHEET_INSTANCE_DATA> SCH_SHEET_LIST::GetSheetInstances() const
 {
-    std::vector<SCH_SHEET_INSTANCE> retval;
+    std::vector<SCH_SHEET_INSTANCE_DATA> retval;
 
     for( const SCH_SHEET_PATH& path : *this )
     {
@@ -1742,7 +1742,7 @@ std::vector<SCH_SHEET_INSTANCE> SCH_SHEET_LIST::GetSheetInstances() const
 
         wxCHECK2( sheet, continue );
 
-        SCH_SHEET_INSTANCE instance;
+        SCH_SHEET_INSTANCE_DATA instance;
         SCH_SHEET_PATH tmpPath = path;
 
         tmpPath.pop_back();
@@ -1843,7 +1843,7 @@ void SCH_SHEET_LIST::AddNewSheetInstances( const SCH_SHEET_PATH& aPrefixSheetPat
 
         nextVirtualPageNumber += 1;
 
-        SCH_SHEET_INSTANCE instance;
+        SCH_SHEET_INSTANCE_DATA instance;
 
         // Add the instance if it doesn't already exist
         if( !sheet->getInstance( instance, tmp, true ) )

@@ -152,9 +152,17 @@ public:
 
 
 /**
- * A simple container for sheet instance information.
+ * A simple container for per-sheet-instance data:
+ * page number, project name, BOM/SIM/board-exclusion flags, variants.
+ *
+ * Renamed from the historical `SCH_SHEET_INSTANCE`; "instance data"
+ * names what the struct actually carries (a payload for one entry of
+ * a sheet's per-path data table), distinct from the new identity
+ * type `SCH_SHEET_INSTANCE` introduced in the v3 refactor for naming
+ * an appearance of a sheet in the hierarchy.  See
+ * eeschema/sch_sheet_instance.h for the identity type.
  */
-struct SCH_SHEET_INSTANCE
+struct SCH_SHEET_INSTANCE_DATA
 {
     KIID_PATH m_Path;
 
@@ -802,7 +810,7 @@ public:
      *
      * @param aSymbolInstances is the symbol path information loaded from the root schematic.
      */
-    void UpdateSheetInstanceData( const std::vector<SCH_SHEET_INSTANCE>& aSheetInstances );
+    void UpdateSheetInstanceData( const std::vector<SCH_SHEET_INSTANCE_DATA>& aSheetInstances );
 
     std::vector<KIID_PATH> GetPaths() const;
 
@@ -811,7 +819,7 @@ public:
      *
      * @return all of the sheet instance data for the hierarchy.
      */
-    std::vector<SCH_SHEET_INSTANCE> GetSheetInstances() const;
+    std::vector<SCH_SHEET_INSTANCE_DATA> GetSheetInstances() const;
 
     /**
      * Check all of the sheet instance for empty page numbers.

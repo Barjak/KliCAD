@@ -346,7 +346,7 @@ SCH_SHEET* SCH_IO_PADS::LoadSchematicFile( const wxString&                    aF
     SCH_SCREEN* rootScreen = rootSheet->GetScreen();
     wxCHECK( rootScreen, nullptr );
 
-    SCH_SHEET_INSTANCE sheetInstance;
+    SCH_SHEET_INSTANCE_DATA sheetInstance;
     sheetInstance.m_Path = rootPath.Path();
     sheetInstance.m_PageNumber = wxT( "#" );
     rootScreen->m_sheetInstances.emplace_back( sheetInstance );
@@ -465,7 +465,7 @@ SCH_SHEET* SCH_IO_PADS::LoadSchematicFile( const wxString&                    aF
             wxString pageNo = wxString::Format( wxT( "%d" ), sheetNum );
             subPath.SetPageNumber( pageNo );
 
-            SCH_SHEET_INSTANCE subInstance;
+            SCH_SHEET_INSTANCE_DATA subInstance;
             subInstance.m_Path = subPath.Path();
             subInstance.m_PageNumber = pageNo;
             subSheet->GetScreen()->m_sheetInstances.emplace_back( subInstance );

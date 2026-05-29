@@ -520,7 +520,7 @@ void SCH_IO_KICAD_SEXPR::Format( SCH_SHEET* aSheet )
 
     if( aSheet->HasRootInstance() )
     {
-        std::vector< SCH_SHEET_INSTANCE> instances;
+        std::vector< SCH_SHEET_INSTANCE_DATA> instances;
 
         instances.emplace_back( aSheet->GetRootInstance() );
         saveInstances( instances );
@@ -1154,7 +1154,7 @@ void SCH_IO_KICAD_SEXPR::saveSheet( SCH_SHEET* aSheet, const SCH_SHEET_LIST& aSh
     }
 
     // Save all sheet instances here except the root sheet instance.
-    std::vector< SCH_SHEET_INSTANCE > sheetInstances = aSheet->GetInstances();
+    std::vector< SCH_SHEET_INSTANCE_DATA > sheetInstances = aSheet->GetInstances();
 
     auto it = sheetInstances.begin();
 
@@ -1705,13 +1705,13 @@ void SCH_IO_KICAD_SEXPR::saveGroup( SCH_GROUP* aGroup )
 }
 
 
-void SCH_IO_KICAD_SEXPR::saveInstances( const std::vector<SCH_SHEET_INSTANCE>& aInstances )
+void SCH_IO_KICAD_SEXPR::saveInstances( const std::vector<SCH_SHEET_INSTANCE_DATA>& aInstances )
 {
     if( aInstances.size() )
     {
         m_out->Print( "(sheet_instances" );
 
-        for( const SCH_SHEET_INSTANCE& instance : aInstances )
+        for( const SCH_SHEET_INSTANCE_DATA& instance : aInstances )
         {
             wxString path = instance.m_Path.AsString();
 

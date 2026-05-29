@@ -504,9 +504,9 @@ public:
     EDA_ITEM* Clone() const override;
 
     /**
-     * @return the list of #SCH_SHEET_INSTANCE objects for this sheet.
+     * @return the list of #SCH_SHEET_INSTANCE_DATA objects for this sheet.
      */
-    const std::vector<SCH_SHEET_INSTANCE>& GetInstances() const { return m_instances; }
+    const std::vector<SCH_SHEET_INSTANCE_DATA>& GetInstances() const { return m_instances; }
 
     // ──────────────────────────────────────────────────────────────────
     // Multi-channel (REPEAT-style) sheets
@@ -580,11 +580,11 @@ public:
      *
      * @return the root sheet instance data.
      */
-    const SCH_SHEET_INSTANCE& GetRootInstance() const;
+    const SCH_SHEET_INSTANCE_DATA& GetRootInstance() const;
 
     void RemoveInstance( const KIID_PATH& aInstancePath );
 
-    void AddInstance( const SCH_SHEET_INSTANCE& aInstance );
+    void AddInstance( const SCH_SHEET_INSTANCE_DATA& aInstance );
 
     void DeleteVariant( const KIID_PATH& aPath, const wxString& aVariantName );
 
@@ -638,7 +638,7 @@ protected:
     friend SCH_SHEET_PATH;
     friend SCH_IO_KICAD_SEXPR_PARSER;
 
-    void setInstances( const std::vector<SCH_SHEET_INSTANCE>& aInstances )
+    void setInstances( const std::vector<SCH_SHEET_INSTANCE_DATA>& aInstances )
     {
         m_instances = aInstances;
     }
@@ -680,14 +680,14 @@ protected:
      */
     void setPageNumber( const KIID_PATH& aInstance, const wxString& aPageNumber );
 
-    bool getInstance( SCH_SHEET_INSTANCE& aInstance, const KIID_PATH& aSheetPath,
+    bool getInstance( SCH_SHEET_INSTANCE_DATA& aInstance, const KIID_PATH& aSheetPath,
                       bool aTestFromEnd = false ) const;
 
-    SCH_SHEET_INSTANCE* getInstance( const KIID_PATH& aPath );
-    const SCH_SHEET_INSTANCE* getInstance( const KIID_PATH& aPath ) const;
+    SCH_SHEET_INSTANCE_DATA* getInstance( const KIID_PATH& aPath );
+    const SCH_SHEET_INSTANCE_DATA* getInstance( const KIID_PATH& aPath ) const;
 
-    SCH_SHEET_INSTANCE* getInstance( const SCH_SHEET_PATH& aPath ) { return getInstance( aPath.Path() ); }
-    const SCH_SHEET_INSTANCE* getInstance( const SCH_SHEET_PATH& aPath ) const { return getInstance( aPath.Path() ); }
+    SCH_SHEET_INSTANCE_DATA* getInstance( const SCH_SHEET_PATH& aPath ) { return getInstance( aPath.Path() ); }
+    const SCH_SHEET_INSTANCE_DATA* getInstance( const SCH_SHEET_PATH& aPath ) const { return getInstance( aPath.Path() ); }
 
     /**
      * Renumber the sheet pins in the sheet.
@@ -729,7 +729,7 @@ private:
     KIGFX::COLOR4D              m_borderColor;
     KIGFX::COLOR4D              m_backgroundColor;
 
-    std::vector<SCH_SHEET_INSTANCE> m_instances;
+    std::vector<SCH_SHEET_INSTANCE_DATA> m_instances;
 
     // Multi-channel data — see the public block above for details.
     // Default state (m_repeatCount == 1, empty m_repeatInstances,

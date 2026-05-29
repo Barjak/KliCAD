@@ -2531,7 +2531,7 @@ int SCH_EDITOR_CONTROL::Paste( const TOOL_EVENT& aEvent )
                 while( hierarchy.PageNumberExists( pageNum ) )
                     pageNum = wxString::Format( "%d", ++page );
 
-                SCH_SHEET_INSTANCE sheetInstance;
+                SCH_SHEET_INSTANCE_DATA sheetInstance;
 
                 sheetInstance.m_Path = pastedSheet.Path();
 
@@ -2550,7 +2550,7 @@ int SCH_EDITOR_CONTROL::Paste( const TOOL_EVENT& aEvent )
                 // Remove all pasted sheet instance data that is not part of the current project.
                 std::vector<KIID_PATH> instancesToRemove;
 
-                for( const SCH_SHEET_INSTANCE& instance : sheet->GetInstances() )
+                for( const SCH_SHEET_INSTANCE_DATA& instance : sheet->GetInstances() )
                 {
                     if( !hierarchy.HasPath( instance.m_Path ) )
                         instancesToRemove.push_back( instance.m_Path );
