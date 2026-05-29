@@ -526,7 +526,7 @@ BOOST_AUTO_TEST_CASE( GetInstanceWalksThePath )
 
         for( size_t i = 0; i < p.size(); ++i )
         {
-            SCH_SHEET*         step = p.GetSheet( i );
+            const SCH_SHEET*   step = p.GetSheet( i );
             SCH_SHEET_INSTANCE inst = p.GetInstance( i );
 
             BOOST_REQUIRE( step );
