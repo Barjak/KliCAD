@@ -36,6 +36,7 @@
 #include <optional>
 
 #include <kiid.h>
+#include <sch_sheet_instance.h>
 #include <wx/string.h>
 
 class SCH_SYMBOL;
@@ -374,6 +375,33 @@ public:
 
     ///< @copydoc SCH_SHEET_PATH::LastScreen()
     SCH_SCREEN* LastScreen() const;
+
+    /**
+     * Identity-by-value access (P4 of the SCH_SHEET_INSTANCE refactor).
+     *
+     * Each call constructs a fresh `SCH_SHEET_INSTANCE` value from the
+     * current m_sheets entry — no SCH_SHEET pointer is retained or
+     * returned.  Use these in long-lived storage (CONNECTION_SUBGRAPH,
+     * SCH_REFERENCE, std::map keys) so identity survives any
+     * RefreshHierarchy / ClearRepeatCloneCache cycle.
+     *
+     * For non-multi-channel sheets the returned instance has
+     * `template_kiid == slot_kiid == leaf->m_Uuid`.  For multi-channel
+     * slot K>0 the returned instance has
+     * `template_kiid == leaf->GetTemplate()->m_Uuid` and
+     * `slot_kiid == leaf->m_Uuid`.  See sch_sheet_instance.h for the
+     * value-type's contract.
+     *
+     * Returns default-constructed SCH_SHEET_INSTANCE() (two niluuids)
+     * when the path is empty.
+     */
+    SCH_SHEET_INSTANCE LastInstance() const;
+
+    /**
+     * @return the SCH_SHEET_INSTANCE value at position @p aIndex along
+     * the path, or default-constructed if out of range.
+     */
+    SCH_SHEET_INSTANCE GetInstance( size_t aIndex ) const;
 
     /**
      * Derive the multi-channel slot index of this path's last segment.

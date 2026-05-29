@@ -440,4 +440,86 @@ BOOST_AUTO_TEST_CASE( ConnectionMapPathReadsSurviveRefresh )
 }
 
 
+/**
+ * P4 additive API: LastInstance() / GetInstance(i) extract
+ * SCH_SHEET_INSTANCE values from the current m_sheets storage.
+ *
+ * For a non-synthetic sheet: template_kiid == slot_kiid == sheet's
+ * own m_Uuid.  For a synthetic-clone slot path: template_kiid is
+ * the on-canvas template's m_Uuid, slot_kiid is the clone's
+ * (drawn from the template's m_repeatInstances).
+ */
+BOOST_AUTO_TEST_CASE( LastInstanceSplitsTemplateFromSlot )
+{
+    SetRepeat( 4 );
+    m_schematic.RefreshHierarchy();
+
+    int slotZeroFound = 0;
+    int slotKFound    = 0;
+
+    for( const SCH_SHEET_PATH& p : m_schematic.Hierarchy() )
+    {
+        if( p.size() != 2 )
+            continue;
+
+        SCH_SHEET*         leaf = p.Last();
+        SCH_SHEET_INSTANCE inst = p.LastInstance();
+
+        BOOST_REQUIRE( leaf );
+
+        if( leaf->IsSynthetic() )
+        {
+            // Slot K > 0: clone's m_Uuid is the slot_kiid; the
+            // template's m_Uuid is the template_kiid.
+            BOOST_CHECK_EQUAL( inst.SlotKiid(),     leaf->m_Uuid );
+            BOOST_CHECK_EQUAL( inst.TemplateKiid(), leaf->GetTemplate()->m_Uuid );
+            BOOST_CHECK( !inst.IsTemplateSlot() );
+            slotKFound++;
+        }
+        else if( leaf == m_channel )
+        {
+            // Slot 0: sheet IS the template; both KIIDs equal.
+            BOOST_CHECK_EQUAL( inst.SlotKiid(),     leaf->m_Uuid );
+            BOOST_CHECK_EQUAL( inst.TemplateKiid(), leaf->m_Uuid );
+            BOOST_CHECK( inst.IsTemplateSlot() );
+            slotZeroFound++;
+        }
+    }
+
+    BOOST_CHECK_EQUAL( slotZeroFound, 1 );
+    BOOST_CHECK_EQUAL( slotKFound,    3 );   // slots 1..3 are synthetic
+}
+
+
+/**
+ * P4: GetInstance(i) at each position along a path returns the
+ * SCH_SHEET_INSTANCE that names that step.
+ */
+BOOST_AUTO_TEST_CASE( GetInstanceWalksThePath )
+{
+    SetRepeat( 4 );
+    m_schematic.RefreshHierarchy();
+
+    for( const SCH_SHEET_PATH& p : m_schematic.Hierarchy() )
+    {
+        BOOST_CHECK_EQUAL( p.GetInstance( p.size() ),  SCH_SHEET_INSTANCE() );
+        BOOST_CHECK_EQUAL( p.GetInstance( p.size() + 7 ),
+                           SCH_SHEET_INSTANCE() );
+
+        for( size_t i = 0; i < p.size(); ++i )
+        {
+            SCH_SHEET*         step = p.GetSheet( i );
+            SCH_SHEET_INSTANCE inst = p.GetInstance( i );
+
+            BOOST_REQUIRE( step );
+            BOOST_CHECK_EQUAL( inst.SlotKiid(), step->m_Uuid );
+            BOOST_CHECK_EQUAL( inst.TemplateKiid(),
+                               step->GetTemplate()
+                                       ? step->GetTemplate()->m_Uuid
+                                       : step->m_Uuid );
+        }
+    }
+}
+
+
 BOOST_AUTO_TEST_SUITE_END()

@@ -281,6 +281,37 @@ SCH_SCREEN* SCH_SHEET_PATH::LastScreen()
 }
 
 
+SCH_SHEET_INSTANCE SCH_SHEET_PATH::LastInstance() const
+{
+    if( empty() )
+        return SCH_SHEET_INSTANCE();
+
+    return GetInstance( size() - 1 );
+}
+
+
+SCH_SHEET_INSTANCE SCH_SHEET_PATH::GetInstance( size_t aIndex ) const
+{
+    if( aIndex >= size() )
+        return SCH_SHEET_INSTANCE();
+
+    SCH_SHEET* sheet = m_sheets[aIndex];
+
+    if( !sheet )
+        return SCH_SHEET_INSTANCE();
+
+    // For a non-synthetic sheet, IsSynthetic() is false and GetTemplate()
+    // returns `this` — so template_kiid == slot_kiid == sheet->m_Uuid.
+    // For a synthetic clone, GetTemplate() returns the on-canvas template
+    // whose m_Uuid is the template_kiid, and the clone's own m_Uuid is the
+    // slot_kiid (drawn from the template's m_repeatInstances vector).
+    SCH_SHEET* tmpl = sheet->GetTemplate();
+
+    return SCH_SHEET_INSTANCE( tmpl ? tmpl->m_Uuid : sheet->m_Uuid,
+                               sheet->m_Uuid );
+}
+
+
 SCH_SCREEN* SCH_SHEET_PATH::LastScreen() const
 {
     SCH_SHEET* lastSheet = Last();
