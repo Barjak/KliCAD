@@ -698,10 +698,20 @@ void HIERARCHY_PANE::onRightClick( wxTreeItemId aItem )
         m_tree->CollapseAll();
         break;
     case RENAME:
-        m_tree->SetItemText( aItem, itemData->m_SheetPath.Last()->GetName() );
+    {
+        // P5e: resolve the template via SCHEMATIC + LastInstance —
+        // itemData->m_SheetPath was captured at tree-build time and
+        // may carry a stale synthetic-clone SCH_SHEET* in m_sheets if
+        // a RefreshHierarchy ran in between (auditor I3 / the same
+        // class as the connection_graph UAF).  Template lookup by
+        // KIID is stable.
+        SCH_SHEET* tmpl = m_frame->Schematic().ResolveSheetTemplate(
+                itemData->m_SheetPath.LastInstance() );
+        m_tree->SetItemText( aItem, tmpl ? tmpl->GetName() : wxString() );
         m_tree->EditLabel( aItem );
         setIdenticalSheetsHighlighted( itemData->m_SheetPath );
         break;
+    }
     }
 }
 
@@ -718,13 +728,22 @@ void HIERARCHY_PANE::onTreeEditFinished( wxTreeEvent& event )
     TREE_ITEM_DATA* data = static_cast<TREE_ITEM_DATA*>( m_tree->GetItemData( event.GetItem() ) );
     wxString        newName = event.GetLabel();
 
-    if( data && data->m_SheetPath.Last() )
+    // P5e: resolve the template safely via SCHEMATIC + LastInstance.
+    // Hold on to it for the rest of this handler so subsequent reads
+    // all use the same KIID-resolved pointer instead of repeatedly
+    // dereferencing m_sheets.back() (which may be a freed clone).
+    SCH_SHEET* resolvedTemplate =
+            ( data ? m_frame->Schematic().ResolveSheetTemplate(
+                              data->m_SheetPath.LastInstance() )
+                   : nullptr );
+
+    if( data && resolvedTemplate )
     {
         if( !newName.IsEmpty() )
         {
             // The editor holds only the page name as a text, while normally
             // the tree items displaying it suffixed with the page number
-            if( data->m_SheetPath.Last()->GetName() != newName )
+            if( resolvedTemplate->GetName() != newName )
             {
                 SCH_COMMIT commit( m_frame );
                 SCH_SCREEN* modifyScreen = nullptr;
@@ -744,13 +763,14 @@ void HIERARCHY_PANE::onTreeEditFinished( wxTreeEvent& event )
 
                 if( modifyScreen )
                 {
-                    // Multi-channel: if the tree item points at a
-                    // synthetic clone (one of N peers from a repeated
-                    // sheet), forward the rename to the on-canvas
-                    // template.  Renaming a clone in place would
-                    // silently revert on the next hierarchy rebuild
-                    // (R0 audit, hierarchy_pane site A).
-                    SCH_SHEET* renameTarget = data->m_SheetPath.Last()->GetTemplate();
+                    // P5e: resolvedTemplate above IS the on-canvas
+                    // template (ResolveSheetTemplate returns the
+                    // non-synthetic SCH_SHEET whose m_Uuid matches
+                    // the instance's template_kiid).  Renaming it
+                    // directly forwards the rename in the way the
+                    // R0 audit required (writing to a clone would
+                    // silently revert on the next hierarchy rebuild).
+                    SCH_SHEET* renameTarget = resolvedTemplate;
 
                     commit.Modify( renameTarget->GetField( FIELD_T::SHEET_NAME ),
                                    modifyScreen );
@@ -770,8 +790,9 @@ void HIERARCHY_PANE::onTreeEditFinished( wxTreeEvent& event )
             }
         }
 
-        m_tree->SetItemText( event.GetItem(), formatPageString( data->m_SheetPath.Last()->GetName(),
-                                                                data->m_SheetPath.GetPageNumber() ) );
+        m_tree->SetItemText( event.GetItem(),
+                             formatPageString( resolvedTemplate->GetName(),
+                                               data->m_SheetPath.GetPageNumber() ) );
         setIdenticalSheetsHighlighted( data->m_SheetPath, false );
         // The event needs to be rejected otherwise the SetItemText call above
         // will be ineffective (the treeview item will hold the editor's content)
@@ -983,20 +1004,28 @@ void HIERARCHY_PANE::renameIdenticalSheets( const SCH_SHEET_PATH& renamedSheet,
                 // Multi-channel: forward rename to the template
                 // (R0 audit, hierarchy_pane site B — the recursive
                 // identical-sheets sweep called from site A).
-                SCH_SHEET* renameTarget = data->m_SheetPath.Last()->GetTemplate();
+                //
+                // P5e: resolve via SCHEMATIC + LastInstance so we
+                // don't dereference a possibly-freed synthetic clone.
+                SCH_SHEET* renameTarget = m_frame->Schematic().ResolveSheetTemplate(
+                        data->m_SheetPath.LastInstance() );
 
-                commit->Modify( renameTarget->GetField( FIELD_T::SHEET_NAME ),
-                                modifyScreen );
-
-                renameTarget->SetName( newName );
-
-                if( data->m_SheetPath == m_frame->GetCurrentSheet() )
+                if( renameTarget )
                 {
-                    m_frame->OnPageSettingsChange();
-                }
+                    commit->Modify( renameTarget->GetField( FIELD_T::SHEET_NAME ),
+                                    modifyScreen );
 
-                m_tree->SetItemText( id, formatPageString( data->m_SheetPath.Last()->GetName(),
+                    renameTarget->SetName( newName );
+
+                    if( data->m_SheetPath == m_frame->GetCurrentSheet() )
+                    {
+                        m_frame->OnPageSettingsChange();
+                    }
+
+                    m_tree->SetItemText( id,
+                                         formatPageString( renameTarget->GetName(),
                                                            data->m_SheetPath.GetPageNumber() ) );
+                }
             }
         }
 
