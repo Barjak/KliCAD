@@ -88,7 +88,7 @@ BOOST_AUTO_TEST_CASE( GetOrCreateInsertsAndStampsPath )
 
     SCH_SHEET_INSTANCE_DATA& rec = m_schematic.GetOrCreateSheetInstanceData( p );
 
-    BOOST_CHECK_EQUAL( rec.m_Path, p );
+    BOOST_CHECK( rec.m_Path == p );
     BOOST_CHECK( m_schematic.FindSheetInstanceData( p ) == &rec );
 }
 

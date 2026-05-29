@@ -181,15 +181,15 @@ BOOST_AUTO_TEST_CASE( PathSurvivesRefreshHierarchyCycle )
     // identity by KIID, not by address) and the value remains valid.
     SCH_SHEET_INSTANCE last = cached.LastInstance();
 
-    BOOST_CHECK_EQUAL( last.SlotKiid(),     slotKiid );
-    BOOST_CHECK_EQUAL( last.TemplateKiid(), templateKiid );
+    BOOST_CHECK( last.SlotKiid() == slotKiid  );
+    BOOST_CHECK( last.TemplateKiid() == templateKiid  );
     BOOST_CHECK( !last.IsTemplateSlot() );  // synthetic slot K>0
 
     // The instance can be resolved against SCHEMATIC to recover a
     // live SCH_SHEET* for the freshly-minted clone of the same slot.
     SCH_SHEET* resolved = m_schematic.ResolveSheetTemplate( last );
     BOOST_CHECK( resolved != nullptr );
-    BOOST_CHECK_EQUAL( resolved->m_Uuid, templateKiid );
+    BOOST_CHECK( resolved->m_Uuid == templateKiid  );
 }
 
 
@@ -346,8 +346,11 @@ BOOST_AUTO_TEST_CASE( OrderingStableAcrossRefresh )
     auto after = captureKiidSequences();
     BOOST_REQUIRE_EQUAL( after.size(), 3u );
 
-    BOOST_CHECK_EQUAL_COLLECTIONS( before.begin(), before.end(),
-                                   after.begin(), after.end() );
+    // BOOST_CHECK_EQUAL_COLLECTIONS would need operator<< on the
+    // element type (std::vector<KIID>) — assert by-value equality
+    // directly, with a count check first so the message is meaningful.
+    BOOST_REQUIRE_EQUAL( before.size(), after.size() );
+    BOOST_CHECK( before == after );
 }
 
 
@@ -487,16 +490,16 @@ BOOST_AUTO_TEST_CASE( LastInstanceSplitsTemplateFromSlot )
         {
             // Slot K > 0: clone's m_Uuid is the slot_kiid; the
             // template's m_Uuid is the template_kiid.
-            BOOST_CHECK_EQUAL( inst.SlotKiid(),     leaf->m_Uuid );
-            BOOST_CHECK_EQUAL( inst.TemplateKiid(), leaf->GetTemplate()->m_Uuid );
+            BOOST_CHECK( inst.SlotKiid() == leaf->m_Uuid  );
+            BOOST_CHECK( inst.TemplateKiid() == leaf->GetTemplate()->m_Uuid );
             BOOST_CHECK( !inst.IsTemplateSlot() );
             slotKFound++;
         }
         else if( leaf == m_channel )
         {
             // Slot 0: sheet IS the template; both KIIDs equal.
-            BOOST_CHECK_EQUAL( inst.SlotKiid(),     leaf->m_Uuid );
-            BOOST_CHECK_EQUAL( inst.TemplateKiid(), leaf->m_Uuid );
+            BOOST_CHECK( inst.SlotKiid() == leaf->m_Uuid  );
+            BOOST_CHECK( inst.TemplateKiid() == leaf->m_Uuid  );
             BOOST_CHECK( inst.IsTemplateSlot() );
             slotZeroFound++;
         }
@@ -518,9 +521,8 @@ BOOST_AUTO_TEST_CASE( GetInstanceWalksThePath )
 
     for( const SCH_SHEET_PATH& p : m_schematic.Hierarchy() )
     {
-        BOOST_CHECK_EQUAL( p.GetInstance( p.size() ),  SCH_SHEET_INSTANCE() );
-        BOOST_CHECK_EQUAL( p.GetInstance( p.size() + 7 ),
-                           SCH_SHEET_INSTANCE() );
+        BOOST_CHECK( p.GetInstance( p.size() )      == SCH_SHEET_INSTANCE() );
+        BOOST_CHECK( p.GetInstance( p.size() + 7 )  == SCH_SHEET_INSTANCE() );
 
         for( size_t i = 0; i < p.size(); ++i )
         {
@@ -528,11 +530,10 @@ BOOST_AUTO_TEST_CASE( GetInstanceWalksThePath )
             SCH_SHEET_INSTANCE inst = p.GetInstance( i );
 
             BOOST_REQUIRE( step );
-            BOOST_CHECK_EQUAL( inst.SlotKiid(), step->m_Uuid );
-            BOOST_CHECK_EQUAL( inst.TemplateKiid(),
-                               step->GetTemplate()
-                                       ? step->GetTemplate()->m_Uuid
-                                       : step->m_Uuid );
+            BOOST_CHECK( inst.SlotKiid() == step->m_Uuid  );
+            BOOST_CHECK( inst.TemplateKiid() == ( step->GetTemplate()
+                                                          ? step->GetTemplate()->m_Uuid
+                                                          : step->m_Uuid ) );
         }
     }
 }

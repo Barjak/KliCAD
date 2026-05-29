@@ -51,8 +51,8 @@ BOOST_AUTO_TEST_CASE( DefaultConstructorYieldsTwoNilKiids )
 {
     SCH_SHEET_INSTANCE inst;
 
-    BOOST_CHECK_EQUAL( inst.TemplateKiid(), KIID( 0 ) );
-    BOOST_CHECK_EQUAL( inst.SlotKiid(),     KIID( 0 ) );
+    BOOST_CHECK( inst.TemplateKiid() == KIID( 0 ) );
+    BOOST_CHECK( inst.SlotKiid()     == KIID( 0 ) );
     BOOST_CHECK( inst.IsTemplateSlot() );  // niluuid == niluuid
 }
 
@@ -64,8 +64,8 @@ BOOST_AUTO_TEST_CASE( ConstructorRetainsBothKiids )
 
     SCH_SHEET_INSTANCE inst( t, s );
 
-    BOOST_CHECK_EQUAL( inst.TemplateKiid(), t );
-    BOOST_CHECK_EQUAL( inst.SlotKiid(),     s );
+    BOOST_CHECK( inst.TemplateKiid() == t  );
+    BOOST_CHECK( inst.SlotKiid() == s  );
 }
 
 
@@ -75,8 +75,8 @@ BOOST_AUTO_TEST_CASE( OfTemplateFactorySetsBothToSame )
 
     SCH_SHEET_INSTANCE inst = SCH_SHEET_INSTANCE::OfTemplate( t );
 
-    BOOST_CHECK_EQUAL( inst.TemplateKiid(), t );
-    BOOST_CHECK_EQUAL( inst.SlotKiid(),     t );
+    BOOST_CHECK( inst.TemplateKiid() == t  );
+    BOOST_CHECK( inst.SlotKiid() == t  );
     BOOST_CHECK( inst.IsTemplateSlot() );
 }
 
