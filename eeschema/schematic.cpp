@@ -553,10 +553,10 @@ SCH_SHEET* SCHEMATIC::ResolveSheetTemplate( const SCH_SHEET_INSTANCE& aInstance 
     {
         for( size_t i = 0; i < path.size(); ++i )
         {
-            SCH_SHEET* sheet = path.GetSheet( i );
+            const SCH_SHEET* sheet = path.GetSheet( i );
 
             if( sheet && !sheet->IsSynthetic() && sheet->m_Uuid == templateKiid )
-                return sheet;
+                return const_cast<SCH_SHEET*>( sheet );
         }
     }
 
@@ -607,7 +607,7 @@ void SCHEMATIC::SetSheetInstancePageNumber( const KIID_PATH& aPath,
 wxString SCHEMATIC::GetSheetInstancePageNumber( const KIID_PATH& aPath ) const
 {
     const SCH_SHEET_INSTANCE_DATA* rec = FindSheetInstanceData( aPath );
-    return rec ? rec->m_PageNumber : wxEmptyString;
+    return rec ? rec->m_PageNumber : wxString();
 }
 
 
