@@ -92,7 +92,21 @@
 class SCH_SHEET_INSTANCE
 {
 public:
-    SCH_SHEET_INSTANCE() = default;
+    /**
+     * Default-constructed instance has both KIIDs explicitly set to
+     * the nil KIID (KIID( 0 )).  We must NOT rely on `= default` here
+     * because `KIID()` (the default ctor of the member type) generates
+     * a fresh random UUID on each call — two default-constructed
+     * SCH_SHEET_INSTANCEs would have distinct randomly-generated
+     * KIIDs and would compare unequal, breaking out-of-range queries
+     * (GetInstance(size())) and any "is this the empty sentinel"
+     * check.
+     */
+    SCH_SHEET_INSTANCE() :
+            m_template_kiid( 0 ),
+            m_slot_kiid( 0 )
+    {
+    }
 
     SCH_SHEET_INSTANCE( const KIID& aTemplateKiid, const KIID& aSlotKiid ) :
             m_template_kiid( aTemplateKiid ),
