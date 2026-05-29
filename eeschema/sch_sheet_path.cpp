@@ -148,7 +148,8 @@ SCH_SHEET_PATH& SCH_SHEET_PATH::operator=( const SCH_SHEET_PATH& aOther )
 // Move assignment operator
 SCH_SHEET_PATH& SCH_SHEET_PATH::operator=( SCH_SHEET_PATH&& aOther )
 {
-    m_sheets = std::move( aOther.m_sheets );
+    m_sheets    = std::move( aOther.m_sheets );
+    m_instances = std::move( aOther.m_instances );
 
     m_virtualPageNumber  = aOther.m_virtualPageNumber;
     m_current_hash       = aOther.m_current_hash;
@@ -176,6 +177,7 @@ SCH_SHEET_PATH SCH_SHEET_PATH::operator+( const SCH_SHEET_PATH& aOther )
 void SCH_SHEET_PATH::initFromOther( const SCH_SHEET_PATH& aOther )
 {
     m_sheets             = aOther.m_sheets;
+    m_instances          = aOther.m_instances;
     m_virtualPageNumber  = aOther.m_virtualPageNumber;
     m_current_hash       = aOther.m_current_hash;
     m_cached_page_number = aOther.m_cached_page_number;
@@ -270,6 +272,32 @@ SCH_SHEET* SCH_SHEET_PATH::Last() const
 }
 
 
+void SCH_SHEET_PATH::push_back( SCH_SHEET* aSheet )
+{
+    m_sheets.push_back( aSheet );
+
+    // P4b: keep the parallel SCH_SHEET_INSTANCE mirror in lockstep so
+    // value-typed accessors (LastInstance / GetInstance) can read
+    // identity without dereferencing the SCH_SHEET pointer (which may
+    // dangle after a ClearRepeatCloneCache cycle).  Construct the
+    // instance value at push time from the live aSheet pointer.
+    if( aSheet )
+    {
+        SCH_SHEET* tmpl = aSheet->GetTemplate();
+
+        m_instances.emplace_back(
+                tmpl ? tmpl->m_Uuid : aSheet->m_Uuid,
+                aSheet->m_Uuid );
+    }
+    else
+    {
+        m_instances.emplace_back();
+    }
+
+    Rehash();
+}
+
+
 SCH_SCREEN* SCH_SHEET_PATH::LastScreen()
 {
     SCH_SHEET* lastSheet = Last();
@@ -283,32 +311,19 @@ SCH_SCREEN* SCH_SHEET_PATH::LastScreen()
 
 SCH_SHEET_INSTANCE SCH_SHEET_PATH::LastInstance() const
 {
-    if( empty() )
+    if( m_instances.empty() )
         return SCH_SHEET_INSTANCE();
 
-    return GetInstance( size() - 1 );
+    return m_instances.back();
 }
 
 
 SCH_SHEET_INSTANCE SCH_SHEET_PATH::GetInstance( size_t aIndex ) const
 {
-    if( aIndex >= size() )
+    if( aIndex >= m_instances.size() )
         return SCH_SHEET_INSTANCE();
 
-    SCH_SHEET* sheet = m_sheets[aIndex];
-
-    if( !sheet )
-        return SCH_SHEET_INSTANCE();
-
-    // For a non-synthetic sheet, IsSynthetic() is false and GetTemplate()
-    // returns `this` — so template_kiid == slot_kiid == sheet->m_Uuid.
-    // For a synthetic clone, GetTemplate() returns the on-canvas template
-    // whose m_Uuid is the template_kiid, and the clone's own m_Uuid is the
-    // slot_kiid (drawn from the template's m_repeatInstances vector).
-    SCH_SHEET* tmpl = sheet->GetTemplate();
-
-    return SCH_SHEET_INSTANCE( tmpl ? tmpl->m_Uuid : sheet->m_Uuid,
-                               sheet->m_Uuid );
+    return m_instances[aIndex];
 }
 
 

@@ -263,6 +263,7 @@ public:
     void clear()
     {
         m_sheets.clear();
+        m_instances.clear();
         Rehash();
     }
 
@@ -273,21 +274,32 @@ public:
     void pop_back()
     {
         m_sheets.pop_back();
+
+        if( !m_instances.empty() )
+            m_instances.pop_back();
+
         Rehash();
     }
 
-    /// Forwarded method from std::vector
-    void push_back( SCH_SHEET* aSheet )
-    {
-        m_sheets.push_back( aSheet );
-        Rehash();
-    }
+    /**
+     * Append @p aSheet to the path.  Constructs and appends the
+     * corresponding SCH_SHEET_INSTANCE to m_instances at the same
+     * index (P4b mirror).  Body lives in the .cpp because SCH_SHEET
+     * is only forward-declared here.
+     */
+    void push_back( SCH_SHEET* aSheet );
 
     /// Forwarded method from std::vector
     size_t size() const { return m_sheets.size(); }
 
     std::vector<SCH_SHEET*>::iterator erase( std::vector<SCH_SHEET*>::const_iterator aPosition )
     {
+        // Mirror the erase in m_instances at the same index.
+        size_t idx = static_cast<size_t>( aPosition - m_sheets.begin() );
+
+        if( idx < m_instances.size() )
+            m_instances.erase( m_instances.begin() + idx );
+
         return m_sheets.erase( aPosition );
     }
 
@@ -599,6 +611,16 @@ private:
 
 protected:
     std::vector<SCH_SHEET*> m_sheets;
+
+    /// P4b: parallel SCH_SHEET_INSTANCE mirror of m_sheets.  Identity
+    /// by KIID rather than by SCH_SHEET pointer — survives every
+    /// ClearRepeatCloneCache cycle.  Mutations to m_sheets keep this
+    /// in lockstep at every push_back / pop_back / erase / clear.
+    /// Consumer reads via LastInstance() / GetInstance() route here
+    /// and never touch m_sheets, closing the UAF class for migrated
+    /// callers (P5 series).  P6 removes m_sheets entirely once the
+    /// callers are migrated.
+    std::vector<SCH_SHEET_INSTANCE> m_instances;
 
     size_t                  m_current_hash;
     mutable wxString        m_cached_page_number;
