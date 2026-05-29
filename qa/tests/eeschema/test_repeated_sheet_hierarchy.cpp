@@ -150,9 +150,10 @@ BOOST_AUTO_TEST_CASE( CloneScreenIsShared )
 
 BOOST_AUTO_TEST_CASE( ClonesHaveDistinctKIIDs )
 {
-    // Every channel slot has a distinct Last()->m_Uuid — that's what
-    // distinguishes the N paths from one another for refdes
-    // annotation and netlist export.
+    // P7: every channel slot's Last() is the on-canvas template (same
+    // m_Uuid for all N).  Slot identity now lives on the trailing
+    // SCH_SHEET_INSTANCE — LastInstance().SlotKiid() is the per-slot
+    // disambiguator that refdes annotation and netlist export key on.
     SetRepeat( 4 );
     m_schematic.RefreshHierarchy();
 
@@ -164,7 +165,7 @@ BOOST_AUTO_TEST_CASE( ClonesHaveDistinctKIIDs )
     {
         if( path.size() == 2 && path.Last()->GetFileName() == "channel.kicad_sch" )
         {
-            BOOST_CHECK( seenKIIDs.insert( path.Last()->m_Uuid ).second );
+            BOOST_CHECK( seenKIIDs.insert( path.LastInstance().SlotKiid() ).second );
         }
     }
 

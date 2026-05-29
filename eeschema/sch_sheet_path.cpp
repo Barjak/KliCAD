@@ -280,32 +280,16 @@ SCH_SHEET* SCH_SHEET_PATH::Last() const
     if( m_sheets.empty() )
         return nullptr;
 
-    // P5: when the leaf is a non-template slot (a multi-channel
-    // synthetic clone), m_sheets.back() may be a dangling pointer to
-    // a freed clone after a ClearRepeatCloneCache cycle.  Re-resolve
-    // through SCHEMATIC, finding it via the path's root sheet (which
-    // is the virtual root or another non-synthetic on-canvas sheet —
-    // both are always stable, never put into m_repeatClones).
-    //
-    // P7: every slot resolves to its on-canvas template.  For
-    // non-synthetic (template_kiid == slot_kiid) the m_sheets cache
-    // is the fast path; for non-template-slot leaves the resolution
-    // path returns the *template* (no clone object exists anymore).
-    // Per-path slot identity is preserved in m_instances regardless.
-    SCHEMATIC* sch = m_schematicBackPtr;
-
-    if( !sch && !m_sheets.empty() && m_sheets.front() )
-        sch = m_sheets.front()->Schematic();
-
-    if( sch )
-    {
-        const SCH_SHEET_INSTANCE& leaf = m_instances.back();
-
-        if( SCH_SHEET* tmpl = sch->ResolveSheetTemplate( leaf ) )
-            return tmpl;
-    }
-
-    return m_sheets.empty() ? nullptr : m_sheets.back();
+    // P7: m_sheets.back() is always the on-canvas template.
+    // push_back() stamps it for template-slot paths; push_back_slot()
+    // stamps the same template for slot-K>0 paths (slot identity
+    // lives on the trailing SCH_SHEET_INSTANCE, not on the SCH_SHEET
+    // pointer).  No clone object exists anymore, so no resolution
+    // detour is needed — the pre-P7 ResolveSheetTemplate fast-path
+    // was there to dodge dangling clone pointers, and would now
+    // re-enter SCHEMATIC::Hierarchy() while it is being built (during
+    // BuildSheetList → push_back path → LastScreen → Last).
+    return m_sheets.back();
 }
 
 

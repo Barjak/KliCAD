@@ -266,12 +266,14 @@ BOOST_AUTO_TEST_CASE( GetSlotIndex )
     const_cast<KIID&>( parent->m_Uuid ) = parentScreen->GetUuid();
     parent->SetScreen( parentScreen );
     parent->GetField( FIELD_T::SHEET_NAME )->SetText( "Parent" );
+    parent->SetFileName( "parent.kicad_sch" );
 
     SCH_SHEET*  tmpl = new SCH_SHEET( &sch );
     SCH_SCREEN* tmplScreen = new SCH_SCREEN( &sch );
     const_cast<KIID&>( tmpl->m_Uuid ) = tmplScreen->GetUuid();
     tmpl->SetScreen( tmplScreen );
     tmpl->GetField( FIELD_T::SHEET_NAME )->SetText( "Channel" );
+    tmpl->SetFileName( "channel.kicad_sch" );
     tmpl->SetRepeatCount( 4 );
 
     const KIID k1, k2, k3;
@@ -320,6 +322,7 @@ BOOST_AUTO_TEST_CASE( GetSlotIndex )
     const_cast<KIID&>( plain->m_Uuid ) = plainScreen->GetUuid();
     plain->SetScreen( plainScreen );
     plain->GetField( FIELD_T::SHEET_NAME )->SetText( "Plain" );
+    plain->SetFileName( "plain.kicad_sch" );
     parentScreen->Append( plain );
     sch.RefreshHierarchy();
 
@@ -354,12 +357,14 @@ BOOST_AUTO_TEST_CASE( PathHumanReadableSyntheticSlotSuffix )
     const_cast<KIID&>( parent->m_Uuid ) = parentScreen->GetUuid();
     parent->SetScreen( parentScreen );
     parent->GetField( FIELD_T::SHEET_NAME )->SetText( "Parent" );
+    parent->SetFileName( "parent.kicad_sch" );
 
     SCH_SHEET*  tmpl = new SCH_SHEET( &sch );
     SCH_SCREEN* tmplScreen = new SCH_SCREEN( &sch );
     const_cast<KIID&>( tmpl->m_Uuid ) = tmplScreen->GetUuid();
     tmpl->SetScreen( tmplScreen );
     tmpl->GetField( FIELD_T::SHEET_NAME )->SetText( "Channel" );
+    tmpl->SetFileName( "channel.kicad_sch" );
     tmpl->SetRepeatCount( 4 );
 
     const KIID k1, k2, k3;

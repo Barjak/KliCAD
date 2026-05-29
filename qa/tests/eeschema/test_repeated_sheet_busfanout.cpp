@@ -200,9 +200,12 @@ struct REPEATED_SHEET_BUSFANOUT_FIXTURE
 
         for( const SCH_SHEET_PATH& path : hierarchy )
         {
+            // P7: every path's Last() is the on-canvas template
+            // (m_channel), so slot identity now lives on the trailing
+            // SCH_SHEET_INSTANCE.  Match by LastInstance().SlotKiid().
             if( path.size() == 2 && path.Last()
                 && path.Last()->GetFileName() == "channel.kicad_sch"
-                && path.Last()->m_Uuid == expected )
+                && path.LastInstance().SlotKiid() == expected )
             {
                 return path;
             }
@@ -462,9 +465,12 @@ struct REPEATED_SHEET_BUSFANOUT_SCALAR_FIXTURE
 
         for( const SCH_SHEET_PATH& path : hierarchy )
         {
+            // P7: every path's Last() is the on-canvas template
+            // (m_channel), so slot identity now lives on the trailing
+            // SCH_SHEET_INSTANCE.  Match by LastInstance().SlotKiid().
             if( path.size() == 2 && path.Last()
                 && path.Last()->GetFileName() == "channel.kicad_sch"
-                && path.Last()->m_Uuid == expected )
+                && path.LastInstance().SlotKiid() == expected )
             {
                 return path;
             }
