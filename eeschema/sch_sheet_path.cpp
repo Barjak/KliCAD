@@ -627,11 +627,40 @@ wxString SCH_SHEET_PATH::PathHumanReadable( bool aUseShortRootName,
         s = fn.GetName() + wxS( "/" );
     }
 
+    // P5g: route segment reads through SCHEMATIC + m_instances so we
+    // don't dereference m_sheets[i] for synthetic-slot segments
+    // (which may be freed clones after a ClearRepeatCloneCache).
+    SCHEMATIC* sch = ( !m_sheets.empty() && m_sheets.front() )
+                             ? m_sheets.front()->Schematic()
+                             : nullptr;
+
     // Start at startIdx + 1 since we've already processed the root sheet.
     for( unsigned i = startIdx + 1; i < size(); i++ )
     {
-        SCH_SHEET* segment = at( i );
-        wxString   sheetName = segment->GetField( FIELD_T::SHEET_NAME )->GetShownText( false );
+        const SCH_SHEET_INSTANCE& inst = m_instances[i];
+
+        // Resolve template via SCHEMATIC if available, fall back to the
+        // raw pointer when the path isn't rooted in a live hierarchy
+        // (e.g. unit tests construct paths over local SCH_SHEETs).
+        // The non-synthetic case is always safe to fall back on; for
+        // synthetic clones the raw pointer is the clone, whose
+        // GetField returns the same SHEET_NAME as the template (field-
+        // shallow-copy semantics), so the fallback name is correct.
+        // UAF protection is preserved by SCHEMATIC-resolution taking
+        // precedence in production where SCHEMATIC is reachable.
+        SCH_SHEET* segmentTmpl = nullptr;
+
+        if( sch )
+            segmentTmpl = sch->ResolveSheetTemplate( inst );
+
+        if( !segmentTmpl )
+            segmentTmpl = at( i );
+
+        wxString sheetName;
+
+        if( segmentTmpl )
+            sheetName = segmentTmpl->GetField( FIELD_T::SHEET_NAME )
+                                ->GetShownText( false );
 
         if( aEscapeSheetNames )
             sheetName = EscapeString( sheetName, CTX_NETNAME );
@@ -642,21 +671,16 @@ wxString SCH_SHEET_PATH::PathHumanReadable( bool aUseShortRootName,
         // slot index (1..N-1) to make the human-readable path unique
         // per slot.  Slot 0 (the on-canvas template) is left as-is to
         // preserve today's output for non-multi-channel hierarchies.
-        if( segment->IsSynthetic() )
+        if( !inst.IsTemplateSlot() && segmentTmpl )
         {
-            SCH_SHEET* tmpl = segment->GetTemplate();
+            const std::vector<KIID>& slots = segmentTmpl->GetRepeatInstances();
 
-            if( tmpl )
+            for( size_t k = 0; k < slots.size(); ++k )
             {
-                const std::vector<KIID>& slots = tmpl->GetRepeatInstances();
-
-                for( size_t k = 0; k < slots.size(); ++k )
+                if( slots[k] == inst.SlotKiid() )
                 {
-                    if( slots[k] == segment->m_Uuid )
-                    {
-                        sheetName << wxS( ":" ) << ( static_cast<int>( k ) + 1 );
-                        break;
-                    }
+                    sheetName << wxS( ":" ) << ( static_cast<int>( k ) + 1 );
+                    break;
                 }
             }
         }
