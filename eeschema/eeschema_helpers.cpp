@@ -166,14 +166,6 @@ SCHEMATIC* EESCHEMA_HELPERS::LoadSchematic( const wxString& aFileName,
     schematic->SetSheetNumberAndCount();
     schematic->RecomputeIntersheetRefs();
 
-    // RecalculateConnections (and a few other downstream calls) invoke
-    // SCHEMATIC::RefreshHierarchy(), which clears + rebuilds the
-    // synthetic-clone cache used by multi-channel sheets.  The local
-    // `sheetList` captured at the top of this function holds paths
-    // into the OLD clones — they are now freed memory.  Re-fetch the
-    // current hierarchy before walking it.
-    sheetList = schematic->Hierarchy();
-
     for( SCH_SHEET_PATH& sheet : sheetList )
     {
         sheet.UpdateAllScreenReferences();
