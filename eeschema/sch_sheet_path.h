@@ -267,13 +267,17 @@ public:
         Rehash();
     }
 
-    /// Forwarded method from std::vector
-    bool empty() const { return m_sheets.empty(); }
+    /// P6: size/emptiness from m_instances (the canonical identity
+    /// store).  m_sheets stays in lockstep but is purely a cache for
+    /// the SCH_SHEET pointer of non-synthetic segments — semantic
+    /// presence vs. absence is now decided by the value-typed mirror.
+    bool empty() const { return m_instances.empty(); }
 
     /// Forwarded method from std::vector
     void pop_back()
     {
-        m_sheets.pop_back();
+        if( !m_sheets.empty() )
+            m_sheets.pop_back();
 
         if( !m_instances.empty() )
             m_instances.pop_back();
@@ -289,8 +293,8 @@ public:
      */
     void push_back( SCH_SHEET* aSheet );
 
-    /// Forwarded method from std::vector
-    size_t size() const { return m_sheets.size(); }
+    /// P6: size from m_instances (the canonical identity store).
+    size_t size() const { return m_instances.size(); }
 
     std::vector<SCH_SHEET*>::iterator erase( std::vector<SCH_SHEET*>::const_iterator aPosition )
     {
