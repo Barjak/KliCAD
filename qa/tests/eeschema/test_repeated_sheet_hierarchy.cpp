@@ -188,11 +188,14 @@ BOOST_AUTO_TEST_CASE( SlotZeroIsTheOnCanvasSheet )
 
     for( const SCH_SHEET_PATH& path : hierarchy )
     {
-        if( path.size() == 2 && path.Last()->GetFileName() == "channel.kicad_sch" )
+        // P7: Last() returns the on-canvas template for every slot;
+        // slot identity is in LastInstance().  Count template-slot
+        // vs non-template-slot via the instance, not the SCH_SHEET.
+        if( path.size() == 2 && path.Last() == m_channel )
         {
-            if( path.Last() == m_channel )
+            if( path.LastInstance().IsTemplateSlot() )
                 foundTemplate = true;
-            else if( path.Last()->IsSynthetic() )
+            else
                 ++syntheticCount;
         }
     }
@@ -202,13 +205,12 @@ BOOST_AUTO_TEST_CASE( SlotZeroIsTheOnCanvasSheet )
 }
 
 
-BOOST_AUTO_TEST_CASE( SyntheticClonesPointAtTemplate )
+BOOST_AUTO_TEST_CASE( SlotPathsPointAtTemplate )
 {
-    // GetTemplate() on a synthetic clone returns the on-canvas sheet
-    // — needed for the hierarchy navigator's rename guard, which
-    // forwards SetName writes to the template instead of letting them
-    // hit the transient clone (where they would silently revert on
-    // the next RefreshHierarchy).
+    // P7: every slot path's Last() is the on-canvas template (no
+    // clones).  Slot K>0 vs K=0 is distinguished by the path's
+    // LastInstance().  This guarantees the hierarchy navigator's
+    // rename guard works without ever needing to traverse a clone.
     SetRepeat( 3 );
     m_schematic.RefreshHierarchy();
 
@@ -216,8 +218,8 @@ BOOST_AUTO_TEST_CASE( SyntheticClonesPointAtTemplate )
 
     for( const SCH_SHEET_PATH& path : hierarchy )
     {
-        if( path.size() == 2 && path.Last()->IsSynthetic() )
-            BOOST_CHECK_EQUAL( path.Last()->GetTemplate(), m_channel );
+        if( path.size() == 2 && !path.LastInstance().IsTemplateSlot() )
+            BOOST_CHECK_EQUAL( path.Last(), m_channel );
     }
 }
 

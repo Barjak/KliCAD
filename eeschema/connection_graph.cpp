@@ -2930,14 +2930,13 @@ static SCH_SHEET* resolveHierPinPushTarget( const SCH_SHEET_PATH& aPath,
         if( !lastInst.IsTemplateSlot()
                 && lastInst.TemplateKiid() == aPinParent->m_Uuid )
         {
-            // The leaf is a synthetic slot of aPinParent's template.
-            // Return the live clone pointer for this slot, re-minted
-            // from the SCHEMATIC cache if necessary.  MintRepeatClone
-            // deduplicates by (template, slotKIID) on m_repeatClones,
-            // so it returns the same pointer for repeated calls within
-            // the same ClearRepeatCloneCache window.
-            if( SCHEMATIC* sch = aPinParent->Schematic() )
-                return sch->MintRepeatClone( aPinParent, lastInst.SlotKiid() );
+            // P7: the leaf is slot K>0 of aPinParent's template.  No
+            // clone object exists anymore — return the template
+            // itself.  The path's m_instances carries the slot_kiid;
+            // downstream consumers (connection_graph subgraph lookup
+            // etc.) match by KIID, not by SCH_SHEET pointer identity,
+            // so returning the template is correct.
+            return aPinParent;
         }
     }
 
@@ -4891,19 +4890,15 @@ int CONNECTION_GRAPH::ercCheckRepeatBusPinWidths()
 {
     int errors = 0;
 
-    // Visit each user-placed (template) sheet at most once: synthetic clones
-    // share the template's SCH_SCREEN and pin set, so reporting per slot
-    // would duplicate every marker N times.
+    // Visit each user-placed (template) sheet at most once: after P7 every
+    // path's Last() is the on-canvas template, so N slot paths share the
+    // same SCH_SHEET pointer.  Reporting per slot would duplicate every
+    // marker N times.
     std::set<SCH_SHEET*> visitedTemplates;
 
     for( const SCH_SHEET_PATH& sheet : m_sheetList )
     {
-        SCH_SHEET* last = sheet.Last();
-
-        if( !last )
-            continue;
-
-        SCH_SHEET* tmpl = last->GetTemplate();
+        SCH_SHEET* tmpl = sheet.Last();
 
         if( !tmpl || tmpl->GetRepeatCount() <= 1 )
             continue;

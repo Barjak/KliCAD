@@ -125,13 +125,13 @@ py::dict describe_sheet_path( const SCH_SHEET_PATH& aPath )
     d[ "name" ]        = std::string( last->GetName().utf8_str() );
     d[ "page_number" ] = std::string( aPath.GetPageNumber().utf8_str() );
     d[ "file_name" ]   = std::string( last->GetFileName().utf8_str() );
-    // R5.6: distinguish on-canvas SCH_SHEETs from BuildSheetList's synthetic
-    // clones so Python-side hierarchy diffs (existing_sheets_by_ref etc.)
-    // can keep working off the single on-canvas template entry rather than
-    // having one entry per slot.  Synthetic clones live only in the
-    // SCHEMATIC's m_repeatClones cache; they're not addressable via
-    // add_sheet_pin / delete_by_kiid (lookup is by on-canvas KIID only).
-    d[ "is_synthetic" ] = last->IsSynthetic();
+    // P7: synthetic clones no longer exist.  Every SCH_SHEET reported
+    // is an on-canvas template.  Per-path slot identity is in the
+    // path's `kiids` list below — if a path's leaf KIID differs from
+    // the leaf SCH_SHEET's m_Uuid, the path represents slot K>0 of
+    // a multi-channel sheet.  is_synthetic is preserved as a boolean
+    // for klicad-python wire compatibility but always reads false.
+    d[ "is_synthetic" ] = false;
     // SCH_SHEET_PATH starts at the virtual root, so user depth = size-1.
     d[ "depth" ]       = ( size > 0 ) ? static_cast<int>( size - 1 ) : 0;
 

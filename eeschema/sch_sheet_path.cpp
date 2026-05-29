@@ -287,36 +287,25 @@ SCH_SHEET* SCH_SHEET_PATH::Last() const
     // is the virtual root or another non-synthetic on-canvas sheet —
     // both are always stable, never put into m_repeatClones).
     //
-    // For non-synthetic leaves (the overwhelmingly common case) the
-    // m_sheets pointer is itself stable; we return it directly.  The
-    // resolution path only fires for the multi-channel slot case
-    // where it's load-bearing.
-    if( !m_instances.empty() && !m_instances.back().IsTemplateSlot() )
+    // P7: every slot resolves to its on-canvas template.  For
+    // non-synthetic (template_kiid == slot_kiid) the m_sheets cache
+    // is the fast path; for non-template-slot leaves the resolution
+    // path returns the *template* (no clone object exists anymore).
+    // Per-path slot identity is preserved in m_instances regardless.
+    SCHEMATIC* sch = m_schematicBackPtr;
+
+    if( !sch && !m_sheets.empty() && m_sheets.front() )
+        sch = m_sheets.front()->Schematic();
+
+    if( sch )
     {
-        // P6: prefer the SCHEMATIC back-pointer; fall back to the
-        // m_sheets.front() reach-through for orphan paths (e.g.
-        // unit-test fixtures that push raw SCH_SHEETs without
-        // attaching to any SCHEMATIC).
-        SCHEMATIC* sch = m_schematicBackPtr;
+        const SCH_SHEET_INSTANCE& leaf = m_instances.back();
 
-        if( !sch && !m_sheets.empty() && m_sheets.front() )
-            sch = m_sheets.front()->Schematic();
-
-        if( sch )
-        {
-            const SCH_SHEET_INSTANCE& leaf = m_instances.back();
-
-            if( SCH_SHEET* tmpl = sch->ResolveSheetTemplate( leaf ) )
-            {
-                // MintRepeatClone dedups by (template, slotKIID) —
-                // within one ClearRepeatCloneCache window the same
-                // pointer is returned on repeated calls.
-                return sch->MintRepeatClone( tmpl, leaf.SlotKiid() );
-            }
-        }
+        if( SCH_SHEET* tmpl = sch->ResolveSheetTemplate( leaf ) )
+            return tmpl;
     }
 
-    return m_sheets.back();
+    return m_sheets.empty() ? nullptr : m_sheets.back();
 }
 
 
@@ -326,23 +315,37 @@ void SCH_SHEET_PATH::push_back( SCH_SHEET* aSheet )
 
     // P4b: keep the parallel SCH_SHEET_INSTANCE mirror in lockstep so
     // value-typed accessors (LastInstance / GetInstance) can read
-    // identity without dereferencing the SCH_SHEET pointer (which may
-    // dangle after a ClearRepeatCloneCache cycle).  Construct the
-    // instance value at push time from the live aSheet pointer.
+    // identity without dereferencing the SCH_SHEET pointer.  Construct
+    // the instance value at push time from the live aSheet pointer.
+    // P7: every SCH_SHEET is on-canvas template data; template_kiid
+    // and slot_kiid are both aSheet->m_Uuid (slot 0 / template slot).
+    // Use push_back_slot for multi-channel slot K>0.
     if( aSheet )
     {
-        SCH_SHEET* tmpl = aSheet->GetTemplate();
+        m_instances.emplace_back( aSheet->m_Uuid, aSheet->m_Uuid );
 
-        m_instances.emplace_back(
-                tmpl ? tmpl->m_Uuid : aSheet->m_Uuid,
-                aSheet->m_Uuid );
-
-        // P6: capture SCHEMATIC back-pointer on first push of a sheet
-        // whose Schematic() is reachable.  Used by internal accessors
-        // (Last, PathHumanReadable, etc.) instead of m_sheets.front()->
-        // Schematic() so m_sheets can eventually be removed.
         if( !m_schematicBackPtr )
             m_schematicBackPtr = aSheet->Schematic();
+    }
+    else
+    {
+        m_instances.emplace_back();
+    }
+
+    Rehash();
+}
+
+
+void SCH_SHEET_PATH::push_back_slot( SCH_SHEET* aTemplate, const KIID& aSlotKiid )
+{
+    m_sheets.push_back( aTemplate );
+
+    if( aTemplate )
+    {
+        m_instances.emplace_back( aTemplate->m_Uuid, aSlotKiid );
+
+        if( !m_schematicBackPtr )
+            m_schematicBackPtr = aTemplate->Schematic();
     }
     else
     {
@@ -395,17 +398,22 @@ SCH_SCREEN* SCH_SHEET_PATH::LastScreen() const
 
 int SCH_SHEET_PATH::GetSlotIndex() const
 {
-    SCH_SHEET* last = Last();
-
-    if( !last )
+    if( m_instances.empty() )
         return -1;
 
-    if( last->IsSynthetic() )
+    // P7: read identity by value.  Non-template-slot (template_kiid !=
+    // slot_kiid) means slot K > 0; the slot_kiid is the KIID at
+    // position K-1 in the template's m_repeatInstances.  Template-slot
+    // (template_kiid == slot_kiid) is slot 0 when the template's
+    // repeat_count > 1, or "not a multi-channel expansion" otherwise.
+    const SCH_SHEET_INSTANCE& leaf = m_instances.back();
+
+    if( !leaf.IsTemplateSlot() )
     {
-        // Slots 1..N-1: the clone's m_Uuid is one of the template's
-        // m_repeatInstances entries (position k-1 in the vector
-        // corresponds to slot k).
-        SCH_SHEET* tmpl = last->GetTemplate();
+        SCH_SHEET* tmpl = nullptr;
+
+        if( SCHEMATIC* sch = m_schematicBackPtr )
+            tmpl = sch->ResolveSheetTemplate( leaf );
 
         if( !tmpl )
             return -1;
@@ -414,21 +422,22 @@ int SCH_SHEET_PATH::GetSlotIndex() const
 
         for( size_t k = 0; k < slots.size(); ++k )
         {
-            if( slots[k] == last->m_Uuid )
+            if( slots[k] == leaf.SlotKiid() )
                 return static_cast<int>( k ) + 1;
         }
 
-        // Synthetic clone whose KIID is not on its template's instance
-        // list — data corruption (e.g. template shrunk after the clone
-        // was minted but the cache wasn't cleared).  Not a legal state
-        // post-R2 RefreshHierarchy; surface as "not in expansion".
+        // Slot KIID not found on its template's instance list — data
+        // corruption (template shrunk after the path was constructed).
         return -1;
     }
 
-    // Non-synthetic last segment.  Slot 0 of a multi-channel expansion
-    // is the on-canvas template itself; for single-instance sheets
-    // there is no expansion.
-    if( last->GetRepeatCount() > 1 )
+    // Template slot — slot 0 if it's a multi-channel expansion.
+    SCH_SHEET* tmpl = nullptr;
+
+    if( SCHEMATIC* sch = m_schematicBackPtr )
+        tmpl = sch->ResolveSheetTemplate( leaf );
+
+    if( tmpl && tmpl->GetRepeatCount() > 1 )
         return 0;
 
     return -1;
@@ -437,9 +446,17 @@ int SCH_SHEET_PATH::GetSlotIndex() const
 
 bool SCH_SHEET_PATH::GetExcludedFromSim() const
 {
-    for( SCH_SHEET* sheet : m_sheets )
+    // P7: walk the value-typed mirror, resolving each segment to its
+    // on-canvas template via SCHEMATIC.  Flags live on the template
+    // (synthetic clones used to inherit via field-shallow-copy; with
+    // the clone mechanism gone, we read the template directly).
+    SCHEMATIC* sch = m_schematicBackPtr;
+
+    for( const SCH_SHEET_INSTANCE& inst : m_instances )
     {
-        if( sheet->GetExcludedFromSim() )
+        SCH_SHEET* sheet = sch ? sch->ResolveSheetTemplate( inst ) : nullptr;
+
+        if( sheet && sheet->GetExcludedFromSim() )
             return true;
     }
 
@@ -469,9 +486,13 @@ bool SCH_SHEET_PATH::GetExcludedFromSim( const wxString& aVariantName ) const
 
 bool SCH_SHEET_PATH::GetExcludedFromBOM() const
 {
-    for( SCH_SHEET* sheet : m_sheets )
+    SCHEMATIC* sch = m_schematicBackPtr;
+
+    for( const SCH_SHEET_INSTANCE& inst : m_instances )
     {
-        if( sheet->GetExcludedFromBOM() )
+        SCH_SHEET* sheet = sch ? sch->ResolveSheetTemplate( inst ) : nullptr;
+
+        if( sheet && sheet->GetExcludedFromBOM() )
             return true;
     }
 
@@ -501,9 +522,13 @@ bool SCH_SHEET_PATH::GetExcludedFromBOM( const wxString& aVariantName ) const
 
 bool SCH_SHEET_PATH::GetExcludedFromBoard() const
 {
-    for( SCH_SHEET* sheet : m_sheets )
+    SCHEMATIC* sch = m_schematicBackPtr;
+
+    for( const SCH_SHEET_INSTANCE& inst : m_instances )
     {
-        if( sheet->GetExcludedFromBoard() )
+        SCH_SHEET* sheet = sch ? sch->ResolveSheetTemplate( inst ) : nullptr;
+
+        if( sheet && sheet->GetExcludedFromBoard() )
             return true;
     }
 
@@ -533,9 +558,13 @@ bool SCH_SHEET_PATH::GetExcludedFromBoard( const wxString& aVariantName ) const
 
 bool SCH_SHEET_PATH::GetDNP() const
 {
-    for( SCH_SHEET* sheet : m_sheets )
+    SCHEMATIC* sch = m_schematicBackPtr;
+
+    for( const SCH_SHEET_INSTANCE& inst : m_instances )
     {
-        if( sheet->GetDNP() )
+        SCH_SHEET* sheet = sch ? sch->ResolveSheetTemplate( inst ) : nullptr;
+
+        if( sheet && sheet->GetDNP() )
             return true;
     }
 
@@ -1277,49 +1306,104 @@ void SCH_SHEET_LIST::BuildSheetList( SCH_SHEET* aSheet, bool aCheckIntegrity )
             // Slot 0 is the on-canvas SCH_SHEET itself (its own m_Uuid).
             BuildSheetList( sheet, aCheckIntegrity );
 
-            // Multi-channel: expand slots 1..N-1 as synthetic clones
-            // sharing the template's screen.  The schematic owns the
-            // clones (they survive as long as Hierarchy() copies might
-            // still hold paths into them).
+            // P7: multi-channel slots K>0.  No clone allocation —
+            // push_back_slot encodes the slot identity as an
+            // SCH_SHEET_INSTANCE value on the path, and the same
+            // recursive descent over the template's screen children
+            // produces the slot K subtree.  Per-slot SCH_SHEET storage
+            // is gone; consumers read identity by value.
             if( sheet->GetRepeatCount() <= 1 )
                 continue;
 
             const std::vector<KIID>& slotKIIDs = sheet->GetRepeatInstances();
-            int nClones = sheet->GetRepeatCount() - 1;
+            int nSlots = sheet->GetRepeatCount() - 1;
 
-            if( static_cast<int>( slotKIIDs.size() ) < nClones )
+            if( static_cast<int>( slotKIIDs.size() ) < nSlots )
             {
-                // Invariant violation — m_repeatInstances should have
-                // N-1 entries (slot 0 is the template's own m_Uuid).
-                // Don't crash; clamp to the available count.  Trace
-                // (not warn) — BuildSheetList runs from many sites,
-                // and warning here would spam the log on a malformed
-                // file.
                 wxLogTrace( traceSchSheetPaths,
                             "BuildSheetList: sheet '%s' has repeat_count=%d but "
                             "only %zu repeat_instances; clamping",
                             sheet->GetName(),
                             sheet->GetRepeatCount(),
                             slotKIIDs.size() );
-                nClones = static_cast<int>( slotKIIDs.size() );
+                nSlots = static_cast<int>( slotKIIDs.size() );
             }
 
-            SCHEMATIC* schematic = sheet->Schematic();
+            for( int i = 0; i < nSlots; ++i )
+                buildSheetListAtSlot( sheet, slotKIIDs[i], aCheckIntegrity );
+        }
+    }
 
-            if( !schematic )
+    if( aCheckIntegrity )
+    {
+        for( SCH_SHEET* sheet : badSheets )
+        {
+            m_currentSheetPath.LastScreen()->Remove( sheet );
+            m_currentSheetPath.LastScreen()->SetContentModified();
+        }
+    }
+
+    m_currentSheetPath.pop_back();
+}
+
+
+void SCH_SHEET_LIST::buildSheetListAtSlot( SCH_SHEET* aTemplate,
+                                           const KIID& aSlotKiid,
+                                           bool aCheckIntegrity )
+{
+    if( !aTemplate )
+        return;
+
+    std::vector<SCH_SHEET*> badSheets;
+
+    // P7: push the template + slot identity as the leaf instance.
+    // m_sheets still tracks the template pointer (cache for fast
+    // resolution); m_instances carries the slot identity.
+    m_currentSheetPath.push_back_slot( aTemplate, aSlotKiid );
+    m_currentSheetPath.SetVirtualPageNumber( static_cast<int>( size() ) + 1 );
+    push_back( m_currentSheetPath );
+
+    if( m_currentSheetPath.LastScreen() )
+    {
+        wxString               parentFileName = aTemplate->GetFileName();
+        std::vector<SCH_ITEM*> childSheets;
+        m_currentSheetPath.LastScreen()->GetSheets( &childSheets );
+
+        for( SCH_ITEM* item : childSheets )
+        {
+            SCH_SHEET* sheet = static_cast<SCH_SHEET*>( item );
+
+            if( aCheckIntegrity )
             {
-                wxLogTrace( traceSchSheetPaths,
-                            "BuildSheetList: sheet '%s' has no parent schematic; "
-                            "cannot mint multi-channel clones",
-                            sheet->GetName() );
+                if( m_currentSheetPath.TestForRecursion( sheet->GetFileName(),
+                                                        parentFileName ) )
+                {
+                    badSheets.push_back( sheet );
+                    continue;
+                }
+            }
+            else
+            {
+                wxCHECK2_MSG( sheet->GetFileName() != aTemplate->GetFileName(), continue,
+                              wxT( "Recursion prevented in SCH_SHEET_LIST::"
+                                   "buildSheetListAtSlot" ) );
+            }
+
+            // Slot 0 of the child sheet (its own m_Uuid).
+            BuildSheetList( sheet, aCheckIntegrity );
+
+            // Recursive multi-channel expansion for the child too.
+            if( sheet->GetRepeatCount() <= 1 )
                 continue;
-            }
 
-            for( int i = 0; i < nClones; ++i )
-            {
-                SCH_SHEET* clone = schematic->MintRepeatClone( sheet, slotKIIDs[i] );
-                BuildSheetList( clone, aCheckIntegrity );
-            }
+            const std::vector<KIID>& childSlotKIIDs = sheet->GetRepeatInstances();
+            int nSlots = sheet->GetRepeatCount() - 1;
+
+            if( static_cast<int>( childSlotKIIDs.size() ) < nSlots )
+                nSlots = static_cast<int>( childSlotKIIDs.size() );
+
+            for( int i = 0; i < nSlots; ++i )
+                buildSheetListAtSlot( sheet, childSlotKIIDs[i], aCheckIntegrity );
         }
     }
 

@@ -129,7 +129,7 @@ struct SHEET_PATH_LIFETIME_FIXTURE
     {
         for( const SCH_SHEET_PATH& path : m_schematic.Hierarchy() )
         {
-            if( path.size() == 2 && path.Last()->IsSynthetic() )
+            if( path.size() == 2 && !path.LastInstance().IsTemplateSlot() )
                 return path;
         }
 
@@ -166,8 +166,11 @@ BOOST_AUTO_TEST_CASE( PathSurvivesRefreshHierarchyCycle )
     m_schematic.RefreshHierarchy();
 
     SCH_SHEET_PATH cached = CaptureSyntheticSlotPath();
-    KIID            slotKiid = cached.Last()->m_Uuid;
-    KIID            templateKiid = cached.Last()->GetTemplate()->m_Uuid;
+    // P7: read identity by value — Last() now returns the on-canvas
+    // template for synthetic slots, so Last()->m_Uuid would be the
+    // template's KIID, not the slot's.  LastInstance() carries both.
+    KIID            slotKiid = cached.LastInstance().SlotKiid();
+    KIID            templateKiid = cached.LastInstance().TemplateKiid();
 
     // Force ClearRepeatCloneCache() + remint at new addresses.  This
     // is exactly the sequence that fires from any SCH_COMMIT::Push
@@ -268,7 +271,7 @@ BOOST_AUTO_TEST_CASE( ClonePointerStableWithinSingleRefresh )
 
     for( const SCH_SHEET_PATH& path : m_schematic.Hierarchy() )
     {
-        if( path.size() == 2 && path.Last()->IsSynthetic() )
+        if( path.size() == 2 && !path.LastInstance().IsTemplateSlot() )
         {
             firstLookup = path.Last();
             slotKiid = firstLookup->m_Uuid;
@@ -280,7 +283,7 @@ BOOST_AUTO_TEST_CASE( ClonePointerStableWithinSingleRefresh )
 
     for( const SCH_SHEET_PATH& path : m_schematic.Hierarchy() )
     {
-        if( path.size() == 2 && path.Last()->IsSynthetic()
+        if( path.size() == 2 && !path.LastInstance().IsTemplateSlot()
                 && path.Last()->m_Uuid == slotKiid )
         {
             secondLookup = path.Last();
@@ -322,7 +325,7 @@ BOOST_AUTO_TEST_CASE( OrderingStableAcrossRefresh )
 
         for( const SCH_SHEET_PATH& p : m_schematic.Hierarchy() )
         {
-            if( p.size() == 2 && p.Last()->IsSynthetic() )
+            if( p.size() == 2 && !p.LastInstance().IsTemplateSlot() )
                 ordered.insert( p );
         }
 
@@ -392,7 +395,7 @@ BOOST_AUTO_TEST_CASE( PageNumberSurvivesRefresh )
 
     for( const SCH_SHEET_PATH& p : m_schematic.Hierarchy() )
     {
-        if( p.size() == 2 && p.Last()->IsSynthetic()
+        if( p.size() == 2 && !p.LastInstance().IsTemplateSlot()
                 && p.Last()->m_Uuid == slotKiid )
         {
             found = p;
@@ -486,20 +489,22 @@ BOOST_AUTO_TEST_CASE( LastInstanceSplitsTemplateFromSlot )
 
         BOOST_REQUIRE( leaf );
 
-        if( leaf->IsSynthetic() )
+        // P7: Last() returns the on-canvas template for every slot.
+        // Identity per slot lives in the instance: SlotKiid() differs
+        // from TemplateKiid() iff the leaf is slot K>0 of a multi-
+        // channel sheet.
+        if( leaf == m_channel && !inst.IsTemplateSlot() )
         {
-            // Slot K > 0: clone's m_Uuid is the slot_kiid; the
-            // template's m_Uuid is the template_kiid.
-            BOOST_CHECK( inst.SlotKiid() == leaf->m_Uuid  );
-            BOOST_CHECK( inst.TemplateKiid() == leaf->GetTemplate()->m_Uuid );
-            BOOST_CHECK( !inst.IsTemplateSlot() );
+            // Slot K > 0: TemplateKiid is m_channel's m_Uuid; SlotKiid
+            // is from m_repeatInstances.
+            BOOST_CHECK( inst.TemplateKiid() == leaf->m_Uuid );
             slotKFound++;
         }
         else if( leaf == m_channel )
         {
-            // Slot 0: sheet IS the template; both KIIDs equal.
-            BOOST_CHECK( inst.SlotKiid() == leaf->m_Uuid  );
-            BOOST_CHECK( inst.TemplateKiid() == leaf->m_Uuid  );
+            // Slot 0: SlotKiid == TemplateKiid == m_channel's m_Uuid.
+            BOOST_CHECK( inst.SlotKiid()     == leaf->m_Uuid );
+            BOOST_CHECK( inst.TemplateKiid() == leaf->m_Uuid );
             BOOST_CHECK( inst.IsTemplateSlot() );
             slotZeroFound++;
         }
@@ -530,10 +535,14 @@ BOOST_AUTO_TEST_CASE( GetInstanceWalksThePath )
             SCH_SHEET_INSTANCE inst = p.GetInstance( i );
 
             BOOST_REQUIRE( step );
-            BOOST_CHECK( inst.SlotKiid() == step->m_Uuid  );
-            BOOST_CHECK( inst.TemplateKiid() == ( step->GetTemplate()
-                                                          ? step->GetTemplate()->m_Uuid
-                                                          : step->m_Uuid ) );
+            // P7: step is always the on-canvas template (no clones).
+            // Both kiids on the instance come from the template's
+            // m_Uuid unless this is a multi-channel slot K>0 — in
+            // which case TemplateKiid is the template's and SlotKiid
+            // is from m_repeatInstances.
+            BOOST_CHECK( inst.TemplateKiid() == step->m_Uuid );
+            if( inst.IsTemplateSlot() )
+                BOOST_CHECK( inst.SlotKiid() == step->m_Uuid );
         }
     }
 }

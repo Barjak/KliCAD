@@ -62,9 +62,7 @@ SCH_SHEET::SCH_SHEET( EDA_ITEM* aParent, const VECTOR2I& aPos, VECTOR2I aSize ) 
         m_excludedFromBOM( false ),
         m_excludedFromBoard( false ),
         m_DNP( false ),
-        m_repeatCount( 1 ),
-        m_isSynthetic( false ),
-        m_template( nullptr )
+        m_repeatCount( 1 )
 {
     m_layer = LAYER_SHEET;
     m_pos = aPos;
@@ -241,11 +239,9 @@ SCH_SHEET::SCH_SHEET( const SCH_SHEET& aSheet ) :
     m_repeatCount = aSheet.m_repeatCount;
     m_repeatInstances = aSheet.m_repeatInstances;
 
-    // Copy ctor produces a non-synthetic SCH_SHEET regardless of source.
-    // Synthetic clones are minted only through the R2 BuildSheetList
-    // expansion path, which calls MarkSynthetic() explicitly.
-    m_isSynthetic = false;
-    m_template = nullptr;
+    // P7: synthetic-clone state is gone — every SCH_SHEET is on-canvas
+    // template data, per-path slot identity lives in SCH_SHEET_PATH's
+    // m_instances vector.
 
     for( SCH_SHEET_PIN* pin : aSheet.m_pins )
     {
@@ -524,10 +520,7 @@ void SCH_SHEET::swapData( SCH_ITEM* aItem )
 
     std::swap( m_repeatCount, sheet->m_repeatCount );
     std::swap( m_repeatInstances, sheet->m_repeatInstances );
-    // Deliberately NOT swapping m_isSynthetic / m_template — those are
-    // identity properties of the SCH_SHEET object itself, not of the
-    // user-visible data.  swapData is used by undo/redo, which only
-    // ever exchanges data between persisted-object peers.
+    // P7: synthetic-state swap removed — those members are gone.
 }
 
 

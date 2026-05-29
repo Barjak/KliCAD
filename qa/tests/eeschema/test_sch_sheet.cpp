@@ -260,13 +260,12 @@ BOOST_AUTO_TEST_CASE( EndconnectionPoints )
  */
 BOOST_AUTO_TEST_CASE( RepeatCountDefault )
 {
-    // A fresh SCH_SHEET is single-instance and non-synthetic.  This
-    // guarantees no pre-R1 schematic changes behavior — defaults are
-    // indistinguishable from "no multi-channel data at all".
+    // A fresh SCH_SHEET is single-instance.  P7: IsSynthetic /
+    // GetTemplate are deleted (every SCH_SHEET is on-canvas template
+    // data); per-path slot identity lives in SCH_SHEET_PATH's
+    // m_instances vector instead.
     BOOST_CHECK_EQUAL( m_csheet.GetRepeatCount(), 1 );
     BOOST_CHECK( m_csheet.GetRepeatInstances().empty() );
-    BOOST_CHECK_EQUAL( m_csheet.IsSynthetic(), false );
-    BOOST_CHECK_EQUAL( m_csheet.GetTemplate(), &m_sheet );
 }
 
 
@@ -298,42 +297,20 @@ BOOST_AUTO_TEST_CASE( RepeatInstancesSetGet )
 }
 
 
-BOOST_AUTO_TEST_CASE( CopyCtorPropagatesRepeatStateButNotSyntheticFlag )
+BOOST_AUTO_TEST_CASE( CopyCtorPropagatesRepeatState )
 {
     // Repeat state propagates through the copy ctor (a user-placed
-    // sheet that's duplicated stays a multi-channel sheet).  But the
-    // synthetic flag and template pointer DO NOT — they are identity
-    // properties of the schematic-owned synthetic-clone cache, set
-    // only by MarkSynthetic() during BuildSheetList expansion.
+    // sheet that's duplicated stays a multi-channel sheet).  P7:
+    // m_isSynthetic / m_template are gone, so no synthetic-flag
+    // propagation behavior to test — every SCH_SHEET is template
+    // data, the per-path slot identity lives in SCH_SHEET_PATH.
     m_sheet.SetRepeatCount( 4 );
     m_sheet.SetRepeatInstances( { KIID(), KIID(), KIID() } );
-
-    SCH_SHEET dummyTemplate;
-    m_sheet.MarkSynthetic( &dummyTemplate );
-    BOOST_REQUIRE( m_sheet.IsSynthetic() );
 
     SCH_SHEET copy( m_sheet );
 
     BOOST_CHECK_EQUAL( copy.GetRepeatCount(), 4 );
     BOOST_CHECK_EQUAL( copy.GetRepeatInstances().size(), 3 );
-
-    BOOST_CHECK_EQUAL( copy.IsSynthetic(), false );
-    BOOST_CHECK_EQUAL( copy.GetTemplate(), &copy );
-}
-
-
-BOOST_AUTO_TEST_CASE( MarkSyntheticSetsTemplate )
-{
-    SCH_SHEET tmpl;
-    SCH_SHEET clone;
-
-    BOOST_CHECK_EQUAL( clone.IsSynthetic(), false );
-    BOOST_CHECK_EQUAL( clone.GetTemplate(), &clone );
-
-    clone.MarkSynthetic( &tmpl );
-
-    BOOST_CHECK_EQUAL( clone.IsSynthetic(), true );
-    BOOST_CHECK_EQUAL( clone.GetTemplate(), &tmpl );
 }
 
 

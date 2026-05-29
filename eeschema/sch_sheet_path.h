@@ -294,6 +294,17 @@ public:
      */
     void push_back( SCH_SHEET* aSheet );
 
+    /**
+     * P7: append @p aTemplate to the path as slot @p aSlotKiid of
+     * the template — i.e. instance with template_kiid = aTemplate->
+     * m_Uuid and slot_kiid = aSlotKiid.  Used by BuildSheetList to
+     * push multi-channel slot identities without minting clones.
+     * For slot 0 (the template's own appearance) the equivalent
+     * call is `push_back( aTemplate )` since slot_kiid then equals
+     * the template's m_Uuid.
+     */
+    void push_back_slot( SCH_SHEET* aTemplate, const KIID& aSlotKiid );
+
     /// P6: size from m_instances (the canonical identity store).
     size_t size() const { return m_instances.size(); }
 
@@ -396,18 +407,18 @@ public:
     /**
      * Identity-by-value access (P4 of the SCH_SHEET_INSTANCE refactor).
      *
-     * Each call constructs a fresh `SCH_SHEET_INSTANCE` value from the
-     * current m_sheets entry — no SCH_SHEET pointer is retained or
-     * returned.  Use these in long-lived storage (CONNECTION_SUBGRAPH,
+     * Returns a copy of the trailing SCH_SHEET_INSTANCE from
+     * m_instances — no SCH_SHEET pointer is retained or returned.
+     * Use these in long-lived storage (CONNECTION_SUBGRAPH,
      * SCH_REFERENCE, std::map keys) so identity survives any
-     * RefreshHierarchy / ClearRepeatCloneCache cycle.
+     * RefreshHierarchy cycle.
      *
      * For non-multi-channel sheets the returned instance has
-     * `template_kiid == slot_kiid == leaf->m_Uuid`.  For multi-channel
-     * slot K>0 the returned instance has
-     * `template_kiid == leaf->GetTemplate()->m_Uuid` and
-     * `slot_kiid == leaf->m_Uuid`.  See sch_sheet_instance.h for the
-     * value-type's contract.
+     * `template_kiid == slot_kiid == leaf->m_Uuid` (IsTemplateSlot()
+     * true).  For multi-channel slot K>0 the instance has
+     * `template_kiid == on-canvas template's m_Uuid` and `slot_kiid
+     * == one of the template's m_repeatInstances`.  See
+     * sch_sheet_instance.h for the value-type's contract.
      *
      * Returns default-constructed SCH_SHEET_INSTANCE() (two niluuids)
      * when the path is empty.
@@ -424,26 +435,30 @@ public:
      * Derive the multi-channel slot index of this path's last segment.
      *
      * A SCH_SHEET configured with @c repeat_count > 1 represents N
-     * schematic instances of the same SCH_SCREEN.  BuildSheetList
-     * materializes N SCH_SHEET_PATHs ending in either the on-canvas
-     * template SCH_SHEET (slot 0) or one of N-1 synthetic clones
-     * (slots 1..N-1) — see SCH_SHEET::GetRepeatCount() /
-     * GetRepeatInstances() / IsSynthetic() / GetTemplate().
+     * schematic instances of the same SCH_SCREEN.  After P7 every
+     * path's Last() is the on-canvas template; slot identity lives
+     * on the path's trailing SCH_SHEET_INSTANCE (template_kiid +
+     * slot_kiid).  BuildSheetList materializes N SCH_SHEET_PATHs:
+     * one template-slot (slot_kiid == template_kiid) and N-1 slot
+     * paths whose slot_kiids come from the template's
+     * m_repeatInstances — see SCH_SHEET::GetRepeatCount() /
+     * GetRepeatInstances() and SCH_SHEET_PATH::push_back_slot().
      *
      * @return
-     *   - @c 0 when @c Last() is the on-canvas template of a
-     *     @c repeat_count > 1 sheet (slot 0, the template's own KIID),
-     *   - @c k (with @c 1 <= k < N) when @c Last() is a synthetic
-     *     clone whose KIID equals the template's
+     *   - @c 0 when LastInstance() is a template-slot on a
+     *     @c repeat_count > 1 sheet,
+     *   - @c k (with @c 1 <= k < N) when the trailing instance's
+     *     @c slot_kiid equals the template's
      *     @c GetRepeatInstances()[k-1],
-     *   - @c -1 when @c Last() is not part of a multi-channel
-     *     expansion (single-instance sheet, empty path, or a
-     *     synthetic clone whose KIID is not found on its template —
-     *     the last is a data-corruption guard, not a legal state).
+     *   - @c -1 when the trailing instance is not part of a multi-
+     *     channel expansion (single-instance sheet, empty path, or
+     *     a slot_kiid not found on its template — the last is a
+     *     data-corruption guard, not a legal state).
      *
-     * Pure structural helper: no SCH_SHEET_PATH state is mutated, no
-     * SCHEMATIC lookup is performed.  Cheap (O(N) over the parent's
-     * repeat instances; N is the channel count).
+     * Resolves the template via SCHEMATIC::ResolveSheetTemplate, so
+     * a SCHEMATIC back-pointer must be set (push_back establishes
+     * it from aSheet->Schematic()).  O(N) over the parent's repeat
+     * instances; N is the channel count.
      */
     int GetSlotIndex() const;
 
@@ -851,6 +866,19 @@ public:
      * @throw std::bad_alloc if the memory for the sheet path list could not be allocated.
      */
     void BuildSheetList( SCH_SHEET* aSheet, bool aCheckIntegrity );
+
+private:
+    /// P7: produce paths whose leaf is @p aTemplate identified as
+    /// slot @p aSlotKiid.  Used by BuildSheetList to expand multi-
+    /// channel slot K>0 without minting clone SCH_SHEET objects.
+    /// Equivalent to BuildSheetList(aTemplate) but pushes the leaf
+    /// via SCH_SHEET_PATH::push_back_slot, so the per-path identity
+    /// carries the correct slot_kiid.  The recursive descent into
+    /// child sheets is identical to BuildSheetList's.
+    void buildSheetListAtSlot( SCH_SHEET* aTemplate, const KIID& aSlotKiid,
+                               bool aCheckIntegrity );
+
+public:
 
     /**
      * Sort the list of sheets by page number. This should be called after #BuildSheetList

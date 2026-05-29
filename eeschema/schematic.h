@@ -113,29 +113,12 @@ public:
     SCH_SHEET_LIST BuildUnorderedSheetList() const;
 
     // ──────────────────────────────────────────────────────────────────
-    // Multi-channel synthetic-clone cache (Phase R2)
-    //
-    // When BuildSheetList walks a SCH_SHEET with repeat_count > 1, it
-    // mints N-1 synthetic-clone SCH_SHEETs (one per slot 1..N-1; slot
-    // 0 is the on-canvas template itself).  Clones are field-shallow-
-    // copies of the template that override only m_Uuid (from the
-    // template's m_repeatInstances) and the synthetic-state flags.
-    // They share the template's SCH_SCREEN, so downstream hierarchy
-    // walking sees N peers of the same body.
-    //
-    // The schematic owns the clones because SCH_SHEET_LIST objects
-    // are copied around (Hierarchy() returns by value); the paths in
-    // those copies hold raw SCH_SHEET pointers and must remain valid
-    // as long as any copy lives.  Tying the clones to the schematic
-    // matches the existing pattern that Hierarchy() copies go stale
-    // on any structural mutation.
-    //
-    // Cache invariant: lifetime starts at the next ClearRepeatCloneCache
-    // call.  RefreshHierarchy() calls Clear first so clones from the
-    // previous walk are freed before the new walk starts populating.
+    // P7: The synthetic-clone cache and its MintRepeatClone /
+    // ClearRepeatCloneCache pair are deleted.  Multi-channel slots are
+    // now value-typed identities in SCH_SHEET_PATH::m_instances; no
+    // throwaway SCH_SHEET objects are allocated, no per-cycle cache
+    // to invalidate.  See SCH_SHEET_PATH / SCH_SHEET_INSTANCE.
     // ──────────────────────────────────────────────────────────────────
-    SCH_SHEET* MintRepeatClone( SCH_SHEET* aTemplate, const KIID& aSlotKIID ) const;
-    void ClearRepeatCloneCache() const;
 
     /**
      * Return the full schematic flattened hierarchical sheet list.
@@ -706,20 +689,9 @@ private:
     /// RefreshHierarchy when setting up new schematics
     bool m_settingTopLevelSheets = false;
 
-    /// Owns synthetic-clone SCH_SHEETs minted by BuildSheetList for
-    /// repeat_count > 1 templates.  Keyed by (template, slot KIID)
-    /// so repeated MintRepeatClone calls during the same hierarchy
-    /// state return the *same* clone pointer — required for pointer-
-    /// identity comparisons across hierarchy snapshots (e.g.
-    /// hierarchy_pane.cpp:918's "highlight identical sheets") and to
-    /// keep the cache from growing unboundedly across the many
-    /// BuildSheetList callers that exist outside RefreshHierarchy
-    /// (plot, ERC, netlist, dialog properties, etc).  See
-    /// MintRepeatClone / ClearRepeatCloneCache for the lifetime
-    /// contract.  Mutable because clones are minted lazily during
-    /// const walks.
-    mutable std::map<std::pair<const SCH_SHEET*, KIID>,
-                     std::unique_ptr<SCH_SHEET>> m_repeatClones;
+    // P7: m_repeatClones removed.  Multi-channel slots are now
+    // value-typed in SCH_SHEET_PATH::m_instances; no per-cycle
+    // SCH_SHEET allocations.
 
     /// Authoritative per-sheet-instance data storage, keyed by the
     /// full KIID_PATH from root to the sheet.  Replaces SCH_SHEET::

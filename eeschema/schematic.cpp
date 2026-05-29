@@ -435,12 +435,9 @@ void SCHEMATIC::RefreshHierarchy()
 {
     ensureDefaultTopLevelSheet();
 
-    // Free clones from the previous walk before BuildSheetList starts
-    // populating fresh ones.  Any stale Hierarchy() copies still held
-    // by callers will end up with dangling clone pointers — which
-    // matches the existing pattern that Hierarchy() copies go stale
-    // on structural mutation.
-    ClearRepeatCloneCache();
+    // P7: no clone cache to clear — multi-channel slots are now
+    // value-typed identities in SCH_SHEET_PATH::m_instances, so
+    // RefreshHierarchy is no longer a clone-lifetime boundary.
 
     m_hierarchy = BuildSheetListSortedByPageNumbers();
 
@@ -466,11 +463,16 @@ void SCHEMATIC::importSheetInstanceDataFromSheets()
 
         // The on-sheet storage keys instances by *parent* path; the
         // SCHEMATIC-owned storage keys by *full* path (parent + leaf
-        // KIID).  Walk the sheet's records, translate, fold.
+        // slot_kiid).  Walk the sheet's records, translate, fold.
+        // P7: leaf is always the on-canvas template; the per-path
+        // leaf identity is path.LastInstance().SlotKiid() which equals
+        // leaf->m_Uuid for slot 0 and the slot KIID for slot K>0.
+        const KIID leafKiid = path.LastInstance().SlotKiid();
+
         for( const SCH_SHEET_INSTANCE_DATA& sheetEntry : leaf->GetInstances() )
         {
             KIID_PATH fullPath = sheetEntry.m_Path;
-            fullPath.push_back( leaf->m_Uuid );
+            fullPath.push_back( leafKiid );
 
             auto [it, inserted] = m_sheetInstanceData.try_emplace( fullPath );
 
@@ -491,57 +493,23 @@ void SCHEMATIC::importSheetInstanceDataFromSheets()
 }
 
 
-SCH_SHEET* SCHEMATIC::MintRepeatClone( SCH_SHEET* aTemplate, const KIID& aSlotKIID ) const
-{
-    wxCHECK_MSG( aTemplate, nullptr,
-                 wxT( "MintRepeatClone called with null template" ) );
-
-    // Dedup by (template, slot KIID).  BuildSheetList is called from
-    // many sites outside RefreshHierarchy (plot, ERC, netlist, dialog
-    // properties, etc.) — without dedup each call would mint a fresh
-    // clone, leaking the previous clones and breaking pointer-identity
-    // comparisons across hierarchy snapshots (R2 audit, concern D).
-    auto key = std::make_pair( static_cast<const SCH_SHEET*>( aTemplate ), aSlotKIID );
-
-    auto it = m_repeatClones.find( key );
-
-    if( it != m_repeatClones.end() )
-        return it->second.get();
-
-    // Field-shallow-copy of the template via the existing copy ctor.
-    // Per R1 the copy ctor produces a non-synthetic SCH_SHEET (m_isSynthetic
-    // is reset to false on copy); MarkSynthetic below installs the clone
-    // identity.  The copy ctor also shares m_screen with the template
-    // (via SCH_SCREEN refcount), which is exactly the multi-channel
-    // semantic: N peers sharing one screen.
-    auto clone = std::make_unique<SCH_SHEET>( *aTemplate );
-
-    // Override the copied UUID with this slot's stable KIID.  The copy
-    // ctor preserves the template's m_Uuid (so slot 0 reads as the
-    // template's identity); slots 1..N-1 need their own.
-    const_cast<KIID&>( clone->m_Uuid ) = aSlotKIID;
-
-    clone->MarkSynthetic( aTemplate );
-
-    SCH_SHEET* ptr = clone.get();
-    m_repeatClones.emplace( key, std::move( clone ) );
-    return ptr;
-}
-
-
-void SCHEMATIC::ClearRepeatCloneCache() const
-{
-    m_repeatClones.clear();
-}
+// P7: SCHEMATIC::MintRepeatClone and SCHEMATIC::ClearRepeatCloneCache
+// have been deleted along with the m_repeatClones cache.  The clone
+// mechanism existed only because SCH_SHEET_PATH stored raw SCH_SHEET*
+// pointers and needed something to point at for multi-channel slots.
+// After the SCH_SHEET_INSTANCE refactor, paths carry slot identity
+// by KIID; resolving an instance to a SCH_SHEET returns the on-canvas
+// *template*.  Callers that previously needed slot-specific pointers
+// (e.g. for distinct hierarchy_pane tree nodes) now consult the
+// path's m_instances directly.
 
 
 SCH_SHEET* SCHEMATIC::ResolveSheetTemplate( const SCH_SHEET_INSTANCE& aInstance ) const
 {
     // Resolve via the live hierarchy walk: find the SCH_SHEET whose
-    // m_Uuid matches the instance's template_kiid.  The hierarchy
-    // already filters out synthetic clones (those are temporary
-    // expansions, never real on-canvas sheets), so we iterate the
-    // root + Hierarchy() once and pick the matching template.
+    // m_Uuid matches the instance's template_kiid.  P7: every
+    // SCH_SHEET is on-canvas template data — no synthetic-clone
+    // filter needed.
     //
     // O(n) over the number of sheets in the schematic.  For very
     // deep / wide hierarchies this could be cached; not optimized
@@ -555,7 +523,7 @@ SCH_SHEET* SCHEMATIC::ResolveSheetTemplate( const SCH_SHEET_INSTANCE& aInstance 
         {
             const SCH_SHEET* sheet = path.GetSheet( i );
 
-            if( sheet && !sheet->IsSynthetic() && sheet->m_Uuid == templateKiid )
+            if( sheet && sheet->m_Uuid == templateKiid )
                 return const_cast<SCH_SHEET*>( sheet );
         }
     }
