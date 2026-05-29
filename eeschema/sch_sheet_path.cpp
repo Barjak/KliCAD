@@ -275,10 +275,44 @@ bool SCH_SHEET_PATH::IsContainedWithin( const SCH_SHEET_PATH& aSheetPathToTest )
 
 SCH_SHEET* SCH_SHEET_PATH::Last() const
 {
-    if( !empty() )
-        return m_sheets.back();
+    if( m_sheets.empty() )
+        return nullptr;
 
-    return nullptr;
+    // P5: when the leaf is a non-template slot (a multi-channel
+    // synthetic clone), m_sheets.back() may be a dangling pointer to
+    // a freed clone after a ClearRepeatCloneCache cycle.  Re-resolve
+    // through SCHEMATIC, finding it via the path's root sheet (which
+    // is the virtual root or another non-synthetic on-canvas sheet —
+    // both are always stable, never put into m_repeatClones).
+    //
+    // For non-synthetic leaves (the overwhelmingly common case) the
+    // m_sheets pointer is itself stable; we return it directly.  The
+    // resolution path only fires for the multi-channel slot case
+    // where it's load-bearing.
+    if( m_instances.size() == m_sheets.size()
+            && !m_instances.empty()
+            && !m_instances.back().IsTemplateSlot() )
+    {
+        SCH_SHEET* root = m_sheets.front();   // virtual root is stable
+
+        if( root )
+        {
+            if( SCHEMATIC* sch = root->Schematic() )
+            {
+                const SCH_SHEET_INSTANCE& leaf = m_instances.back();
+
+                if( SCH_SHEET* tmpl = sch->ResolveSheetTemplate( leaf ) )
+                {
+                    // MintRepeatClone dedups by (template, slotKIID)
+                    // — within one ClearRepeatCloneCache window the
+                    // same pointer is returned on repeated calls.
+                    return sch->MintRepeatClone( tmpl, leaf.SlotKiid() );
+                }
+            }
+        }
+    }
+
+    return m_sheets.back();
 }
 
 
