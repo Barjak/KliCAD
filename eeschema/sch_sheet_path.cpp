@@ -802,7 +802,24 @@ wxString SCH_SHEET_PATH::GetPageNumber() const
 
     wxCHECK( sheet, wxEmptyString );
 
-    KIID_PATH tmpPath = Path();
+    KIID_PATH fullPath = Path();
+
+    // P3b: prefer SCHEMATIC-owned per-instance data (survives the
+    // synthetic-clone churn that drops SCH_SHEET::m_instances copies
+    // on every ClearRepeatCloneCache).  Fall back to the on-sheet
+    // storage during the migration window — populated entries that
+    // predate P3a's introduction still live on SCH_SHEET::m_instances
+    // until the load-time importer or a fresh write moves them.
+    if( SCHEMATIC* schematic = sheet->Schematic() )
+    {
+        if( const SCH_SHEET_INSTANCE_DATA* rec =
+                schematic->FindSheetInstanceData( fullPath ) )
+        {
+            return rec->m_PageNumber;
+        }
+    }
+
+    KIID_PATH tmpPath = fullPath;
 
     if( !tmpPath.empty() )
         tmpPath.pop_back();
@@ -830,16 +847,23 @@ void SCH_SHEET_PATH::SetPageNumber( const wxString& aPageNumber )
 
     wxCHECK( sheet, /* void */ );
 
-    KIID_PATH tmpPath = Path();
+    KIID_PATH fullPath = Path();
 
-    if( !tmpPath.empty() )
-    {
-        tmpPath.pop_back();
-    }
-    else
+    if( fullPath.empty() )
     {
         wxCHECK_MSG( false, /* void */, wxS( "Sheet paths must have a least one valid sheet." ) );
     }
+
+    // P3b: write to SCHEMATIC-owned storage as the canonical record.
+    // Survives every ClearRepeatCloneCache() because identity is by
+    // KIID_PATH, not by SCH_SHEET pointer.
+    if( SCHEMATIC* schematic = sheet->Schematic() )
+        schematic->SetSheetInstancePageNumber( fullPath, aPageNumber );
+
+    // Dual-write to the on-sheet storage for backward compatibility
+    // with serialization and any unmigrated readers (removed in P3d).
+    KIID_PATH tmpPath = fullPath;
+    tmpPath.pop_back();
 
     sheet->addInstance( tmpPath );
     sheet->setPageNumber( tmpPath, aPageNumber );

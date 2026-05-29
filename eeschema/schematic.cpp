@@ -443,6 +443,51 @@ void SCHEMATIC::RefreshHierarchy()
     ClearRepeatCloneCache();
 
     m_hierarchy = BuildSheetListSortedByPageNumbers();
+
+    // P3b: import any sheet-instance data still living on SCH_SHEET::
+    // m_instances into the SCHEMATIC-owned authoritative storage.
+    // First-call effect: at-load population (the parser writes to
+    // SCH_SHEET; RefreshHierarchy lifts the data here).  Subsequent
+    // calls: no-op for already-imported entries because try_emplace
+    // skips existing keys (writes through SCH_SHEET_PATH::SetPageNumber
+    // have already populated SCHEMATIC directly).
+    importSheetInstanceDataFromSheets();
+}
+
+
+void SCHEMATIC::importSheetInstanceDataFromSheets()
+{
+    for( const SCH_SHEET_PATH& path : m_hierarchy )
+    {
+        SCH_SHEET* leaf = path.Last();
+
+        if( !leaf )
+            continue;
+
+        // The on-sheet storage keys instances by *parent* path; the
+        // SCHEMATIC-owned storage keys by *full* path (parent + leaf
+        // KIID).  Walk the sheet's records, translate, fold.
+        for( const SCH_SHEET_INSTANCE_DATA& sheetEntry : leaf->GetInstances() )
+        {
+            KIID_PATH fullPath = sheetEntry.m_Path;
+            fullPath.push_back( leaf->m_Uuid );
+
+            auto [it, inserted] = m_sheetInstanceData.try_emplace( fullPath );
+
+            if( inserted )
+            {
+                // First seen — copy the whole record into SCHEMATIC,
+                // overwriting the parent-path key with the full-path
+                // form for canonical storage.
+                it->second = sheetEntry;
+                it->second.m_Path = fullPath;
+            }
+            // Otherwise: SCHEMATIC already has data for this path
+            // (either from a prior import or from a direct write via
+            // SCH_SHEET_PATH::SetPageNumber).  Treat SCHEMATIC as
+            // authoritative; do not overwrite.
+        }
+    }
 }
 
 

@@ -621,6 +621,15 @@ private:
     void ensureCurrentSheetIsTopLevel();
     void rebuildHierarchyState( bool aResetConnectionGraph );
 
+    /// P3b: lift any per-sheet-instance data still living on
+    /// SCH_SHEET::m_instances into the SCHEMATIC-owned authoritative
+    /// store.  Run from RefreshHierarchy() so file-loaded data
+    /// (populated by the parser into SCH_SHEET::m_instances) becomes
+    /// visible to the new SCHEMATIC read path.  Subsequent calls are
+    /// no-op for already-imported entries (try_emplace skips existing
+    /// keys; SCHEMATIC is treated as authoritative).
+    void importSheetInstanceDataFromSheets();
+
     PROJECT* m_project;
 
     /// The virtual root sheet (has no screen, contains all top-level sheets)
