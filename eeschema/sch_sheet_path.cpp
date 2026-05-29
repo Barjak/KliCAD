@@ -148,8 +148,9 @@ SCH_SHEET_PATH& SCH_SHEET_PATH::operator=( const SCH_SHEET_PATH& aOther )
 // Move assignment operator
 SCH_SHEET_PATH& SCH_SHEET_PATH::operator=( SCH_SHEET_PATH&& aOther )
 {
-    m_sheets    = std::move( aOther.m_sheets );
-    m_instances = std::move( aOther.m_instances );
+    m_sheets            = std::move( aOther.m_sheets );
+    m_instances         = std::move( aOther.m_instances );
+    m_schematicBackPtr  = aOther.m_schematicBackPtr;
 
     m_virtualPageNumber  = aOther.m_virtualPageNumber;
     m_current_hash       = aOther.m_current_hash;
@@ -178,6 +179,7 @@ void SCH_SHEET_PATH::initFromOther( const SCH_SHEET_PATH& aOther )
 {
     m_sheets             = aOther.m_sheets;
     m_instances          = aOther.m_instances;
+    m_schematicBackPtr   = aOther.m_schematicBackPtr;
     m_virtualPageNumber  = aOther.m_virtualPageNumber;
     m_current_hash       = aOther.m_current_hash;
     m_cached_page_number = aOther.m_cached_page_number;
@@ -289,25 +291,27 @@ SCH_SHEET* SCH_SHEET_PATH::Last() const
     // m_sheets pointer is itself stable; we return it directly.  The
     // resolution path only fires for the multi-channel slot case
     // where it's load-bearing.
-    if( m_instances.size() == m_sheets.size()
-            && !m_instances.empty()
-            && !m_instances.back().IsTemplateSlot() )
+    if( !m_instances.empty() && !m_instances.back().IsTemplateSlot() )
     {
-        SCH_SHEET* root = m_sheets.front();   // virtual root is stable
+        // P6: prefer the SCHEMATIC back-pointer; fall back to the
+        // m_sheets.front() reach-through for orphan paths (e.g.
+        // unit-test fixtures that push raw SCH_SHEETs without
+        // attaching to any SCHEMATIC).
+        SCHEMATIC* sch = m_schematicBackPtr;
 
-        if( root )
+        if( !sch && !m_sheets.empty() && m_sheets.front() )
+            sch = m_sheets.front()->Schematic();
+
+        if( sch )
         {
-            if( SCHEMATIC* sch = root->Schematic() )
-            {
-                const SCH_SHEET_INSTANCE& leaf = m_instances.back();
+            const SCH_SHEET_INSTANCE& leaf = m_instances.back();
 
-                if( SCH_SHEET* tmpl = sch->ResolveSheetTemplate( leaf ) )
-                {
-                    // MintRepeatClone dedups by (template, slotKIID)
-                    // — within one ClearRepeatCloneCache window the
-                    // same pointer is returned on repeated calls.
-                    return sch->MintRepeatClone( tmpl, leaf.SlotKiid() );
-                }
+            if( SCH_SHEET* tmpl = sch->ResolveSheetTemplate( leaf ) )
+            {
+                // MintRepeatClone dedups by (template, slotKIID) —
+                // within one ClearRepeatCloneCache window the same
+                // pointer is returned on repeated calls.
+                return sch->MintRepeatClone( tmpl, leaf.SlotKiid() );
             }
         }
     }
@@ -332,6 +336,13 @@ void SCH_SHEET_PATH::push_back( SCH_SHEET* aSheet )
         m_instances.emplace_back(
                 tmpl ? tmpl->m_Uuid : aSheet->m_Uuid,
                 aSheet->m_Uuid );
+
+        // P6: capture SCHEMATIC back-pointer on first push of a sheet
+        // whose Schematic() is reachable.  Used by internal accessors
+        // (Last, PathHumanReadable, etc.) instead of m_sheets.front()->
+        // Schematic() so m_sheets can eventually be removed.
+        if( !m_schematicBackPtr )
+            m_schematicBackPtr = aSheet->Schematic();
     }
     else
     {
@@ -630,9 +641,12 @@ wxString SCH_SHEET_PATH::PathHumanReadable( bool aUseShortRootName,
     // P5g: route segment reads through SCHEMATIC + m_instances so we
     // don't dereference m_sheets[i] for synthetic-slot segments
     // (which may be freed clones after a ClearRepeatCloneCache).
-    SCHEMATIC* sch = ( !m_sheets.empty() && m_sheets.front() )
-                             ? m_sheets.front()->Schematic()
-                             : nullptr;
+    // P6: prefer the back-pointer; fall back to the m_sheets.front()
+    // reach-through for orphan paths without a SCHEMATIC context.
+    SCHEMATIC* sch = m_schematicBackPtr;
+
+    if( !sch && !m_sheets.empty() && m_sheets.front() )
+        sch = m_sheets.front()->Schematic();
 
     // Start at startIdx + 1 since we've already processed the root sheet.
     for( unsigned i = startIdx + 1; i < size(); i++ )

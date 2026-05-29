@@ -41,6 +41,7 @@
 
 class SCH_SYMBOL;
 class SCH_SHEET;
+class SCHEMATIC;
 
 enum SYMBOL_FILTER
 {
@@ -636,12 +637,39 @@ protected:
     /// callers are migrated.
     std::vector<SCH_SHEET_INSTANCE> m_instances;
 
+    /// P6: SCHEMATIC back-pointer set lazily on first push_back of a
+    /// sheet whose Schematic() is reachable.  Lets internal Last() /
+    /// PathHumanReadable / future at(i) avoid the m_sheets.front()->
+    /// Schematic() reach-through that the auto-safe accessors used,
+    /// which is a precondition for removing m_sheets.
+    ///
+    /// Lifetime contract: SCHEMATIC must outlive every SCH_SHEET_PATH
+    /// that holds a non-null back-pointer.  This already had to be
+    /// true for the m_sheets.front() reach-through (because m_sheets
+    /// entries point into SCH_SHEETs owned by SCHEMATIC); no new risk
+    /// is admitted by the back-pointer beyond what m_sheets already
+    /// implied.
+    ///
+    /// The back-pointer is NOT serialized, NOT mirrored in operator==
+    /// / hash, NOT used for identity — only for live resolution.
+    SCHEMATIC* m_schematicBackPtr = nullptr;
+
     size_t                  m_current_hash;
     mutable wxString        m_cached_page_number;
 
     int m_virtualPageNumber;           ///< Page numbers are maintained by the sheet load order.
 
     std::map<std::pair<wxString, wxString>, bool> m_recursion_test_cache;
+
+public:
+    /// P6: live SCHEMATIC for paths originating from a SCHEMATIC's
+    /// hierarchy (or pushed onto with a SCHEMATIC-attached sheet).
+    /// Returns nullptr for orphan paths constructed without any
+    /// SCHEMATIC context — e.g. unit-test fixtures that push raw
+    /// SCH_SHEETs.  Internal SCH_SHEET_PATH methods that need
+    /// SCHEMATIC use this and fall back to the m_sheets.front()
+    /// reach-through only when this returns nullptr.
+    SCHEMATIC* Schematic() const { return m_schematicBackPtr; }
 };
 
 
