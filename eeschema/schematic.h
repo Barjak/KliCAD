@@ -712,12 +712,63 @@ private:
     mutable std::map<std::pair<const SCH_SHEET*, KIID>,
                      std::unique_ptr<SCH_SHEET>> m_repeatClones;
 
+    /// Authoritative per-sheet-instance data storage, keyed by the
+    /// full KIID_PATH from root to the sheet.  Replaces SCH_SHEET::
+    /// m_instances as the source of truth (P3 phase of the
+    /// SCH_SHEET_INSTANCE refactor).
+    ///
+    /// Why owned by SCHEMATIC rather than SCH_SHEET:
+    /// - Synthetic SCH_SHEET clones for multi-channel slots used to
+    ///   carry a *copy* of m_instances; writes through a clone (via
+    ///   SCH_SHEET_PATH::SetPageNumber) landed in the clone's copy
+    ///   and were silently lost when ClearRepeatCloneCache freed it.
+    ///   See auditor finding I3 + the regression test
+    ///   PageNumberSurvivesRefresh.
+    /// - Identity (KIID_PATH) is the natural key.  Storing here makes
+    ///   instance data lifetime independent of any SCH_SHEET object
+    ///   lifetime — survives clone churn, survives template
+    ///   recreation on file reload.
+    ///
+    /// During P3a (this commit) the map is added with API only;
+    /// SCH_SHEET::m_instances stays in place.  P3b adds dual-write,
+    /// P3c flips reads, P3d removes SCH_SHEET::m_instances.
+    std::map<KIID_PATH, SCH_SHEET_INSTANCE_DATA> m_sheetInstanceData;
+
     /// Reactive text-variable dependency adapter. Installed as a listener
     /// during SCHEMATIC construction.
     std::unique_ptr<class SCHEMATIC_TEXT_VAR_ADAPTER> m_textVarAdapter;
 
 public:
     class SCHEMATIC_TEXT_VAR_ADAPTER* GetTextVarAdapter() const { return m_textVarAdapter.get(); }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Per-sheet-instance data (P3 of the SCH_SHEET_INSTANCE refactor)
+    //
+    // Page numbers, project name, BOM/SIM/board exclusions, variant
+    // map.  Keyed by the full KIID_PATH from root to the sheet.
+    // Survives RefreshHierarchy/ClearRepeatCloneCache because identity
+    // is by KIID, not by SCH_SHEET pointer.
+    //
+    // These accessors are the canonical hot-path after the migration
+    // completes.  During P3a–c they coexist with SCH_SHEET::m_instances
+    // via dual-write.
+    // ──────────────────────────────────────────────────────────────────
+
+    /// Get an existing record by path, or nullptr if none.
+    const SCH_SHEET_INSTANCE_DATA* FindSheetInstanceData( const KIID_PATH& aPath ) const;
+
+    /// Get or create the record for this path.  The returned reference
+    /// remains valid until the next mutation of m_sheetInstanceData.
+    SCH_SHEET_INSTANCE_DATA& GetOrCreateSheetInstanceData( const KIID_PATH& aPath );
+
+    /// Remove the record at this path, if present.  No-op if absent.
+    void RemoveSheetInstanceData( const KIID_PATH& aPath );
+
+    /// Convenience for the page-number hotpath (called by
+    /// SCH_SHEET_PATH::SetPageNumber/GetPageNumber after P3b/c).
+    void     SetSheetInstancePageNumber( const KIID_PATH& aPath,
+                                         const wxString& aPageNumber );
+    wxString GetSheetInstancePageNumber( const KIID_PATH& aPath ) const;
 };
 
 #endif

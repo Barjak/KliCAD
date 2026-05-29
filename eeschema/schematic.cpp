@@ -526,6 +526,46 @@ SCH_SCREEN* SCHEMATIC::ResolveSheetScreen( const SCH_SHEET_INSTANCE& aInstance )
 }
 
 
+const SCH_SHEET_INSTANCE_DATA*
+SCHEMATIC::FindSheetInstanceData( const KIID_PATH& aPath ) const
+{
+    auto it = m_sheetInstanceData.find( aPath );
+    return ( it == m_sheetInstanceData.end() ) ? nullptr : &it->second;
+}
+
+
+SCH_SHEET_INSTANCE_DATA&
+SCHEMATIC::GetOrCreateSheetInstanceData( const KIID_PATH& aPath )
+{
+    auto [it, inserted] = m_sheetInstanceData.try_emplace( aPath );
+
+    if( inserted )
+        it->second.m_Path = aPath;
+
+    return it->second;
+}
+
+
+void SCHEMATIC::RemoveSheetInstanceData( const KIID_PATH& aPath )
+{
+    m_sheetInstanceData.erase( aPath );
+}
+
+
+void SCHEMATIC::SetSheetInstancePageNumber( const KIID_PATH& aPath,
+                                            const wxString& aPageNumber )
+{
+    GetOrCreateSheetInstanceData( aPath ).m_PageNumber = aPageNumber;
+}
+
+
+wxString SCHEMATIC::GetSheetInstancePageNumber( const KIID_PATH& aPath ) const
+{
+    const SCH_SHEET_INSTANCE_DATA* rec = FindSheetInstanceData( aPath );
+    return rec ? rec->m_PageNumber : wxEmptyString;
+}
+
+
 void SCHEMATIC::GetContextualTextVars( wxArrayString* aVars ) const
 {
     auto add = [&]( const wxString& aVar )

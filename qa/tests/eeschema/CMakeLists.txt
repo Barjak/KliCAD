@@ -132,6 +132,7 @@ set( QA_EESCHEMA_SRCS
     test_repeated_sheet_busfanout.cpp
     test_sheet_path_lifetime.cpp
     test_sch_sheet_instance.cpp
+    test_schematic_sheet_instance_data.cpp
     test_sch_symbol.cpp
     test_sch_table.cpp
     test_sch_textbox.cpp
