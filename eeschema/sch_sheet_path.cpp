@@ -189,28 +189,38 @@ void SCH_SHEET_PATH::initFromOther( const SCH_SHEET_PATH& aOther )
 
 void SCH_SHEET_PATH::Rehash()
 {
+    // P5: hash over m_instances slot KIIDs.  The original walked
+    // m_sheets and read sheet->m_Uuid.Hash() — the source of the
+    // hash data is the same (slot KIID), but reading from the
+    // value-typed mirror avoids any chance of dereferencing a freed
+    // SCH_SHEET pointer.  Hash semantics are unchanged.
     m_current_hash = 0;
 
-    for( SCH_SHEET* sheet : m_sheets )
-        hash_combine( m_current_hash, sheet->m_Uuid.Hash() );
+    for( const SCH_SHEET_INSTANCE& inst : m_instances )
+        hash_combine( m_current_hash, inst.SlotKiid().Hash() );
 }
 
 
 int SCH_SHEET_PATH::Cmp( const SCH_SHEET_PATH& aSheetPathToTest ) const
 {
-    if( size() > aSheetPathToTest.size() )
+    // P5: lex-compare by SCH_SHEET_INSTANCE slot KIIDs.  Same identity
+    // semantics as before (the original walked at(i)->m_Uuid) but
+    // sourced from the safe mirror instead of dereferencing m_sheets.
+    const auto& a = m_instances;
+    const auto& b = aSheetPathToTest.m_instances;
+
+    if( a.size() > b.size() )
         return 1;
 
-    if( size() < aSheetPathToTest.size() )
+    if( a.size() < b.size() )
         return -1;
 
-    // otherwise, same number of sheets.
-    for( unsigned i = 0; i < size(); i++ )
+    for( size_t i = 0; i < a.size(); i++ )
     {
-        if( at( i )->m_Uuid < aSheetPathToTest.at( i )->m_Uuid )
+        if( a[i].SlotKiid() < b[i].SlotKiid() )
             return -1;
 
-        if( at( i )->m_Uuid != aSheetPathToTest.at( i )->m_Uuid )
+        if( a[i].SlotKiid() != b[i].SlotKiid() )
             return 1;
     }
 
@@ -510,14 +520,16 @@ bool SCH_SHEET_PATH::GetDNP( const wxString& aVariantName ) const
 
 wxString SCH_SHEET_PATH::PathAsString() const
 {
+    // P5: read from m_instances rather than dereferencing m_sheets.
+    // Identity-by-KIID survives synthetic-clone churn.
     wxString s;
 
     s = wxT( "/" );     // This is the root path
 
     // Start at 1 to avoid the root sheet, which does not need to be added to the path.
     // Its timestamp changes anyway.
-    for( unsigned i = 1; i < size(); i++ )
-        s += at( i )->m_Uuid.AsString() + "/";
+    for( unsigned i = 1; i < m_instances.size(); i++ )
+        s += m_instances[i].SlotKiid().AsString() + "/";
 
     return s;
 }
@@ -525,25 +537,29 @@ wxString SCH_SHEET_PATH::PathAsString() const
 
 KIID_PATH SCH_SHEET_PATH::Path() const
 {
+    // P5: read identity from m_instances (value-typed; outlives any
+    // synthetic-clone churn) rather than dereferencing m_sheets.
+    // Original behavior preserved exactly — same KIID stream out, just
+    // sourced from the safe mirror instead of the pointer chain.
     KIID_PATH path;
-    size_t size = m_sheets.size();
+    const size_t sz = m_instances.size();
 
-    if( m_sheets.empty() )
+    if( sz == 0 )
         return path;
 
-    if( m_sheets[0]->m_Uuid != niluuid )
+    if( m_instances[0].SlotKiid() != niluuid )
     {
-        path.reserve( size );
-        path.push_back( m_sheets[0]->m_Uuid );
+        path.reserve( sz );
+        path.push_back( m_instances[0].SlotKiid() );
     }
     else
     {
-        // Skip the virtual root
-        path.reserve( size - 1 );
+        // Skip the virtual root.
+        path.reserve( sz - 1 );
     }
 
-    for( size_t i = 1; i < size; i++ )
-        path.push_back( m_sheets[i]->m_Uuid );
+    for( size_t i = 1; i < sz; i++ )
+        path.push_back( m_instances[i].SlotKiid() );
 
     return path;
 }

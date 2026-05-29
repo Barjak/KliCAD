@@ -604,7 +604,17 @@ public:
 
     bool operator!=( const SCH_SHEET_PATH& d1 ) const { return !( *this == d1 ) ; }
 
-    bool operator<( const SCH_SHEET_PATH& d1 ) const { return m_sheets < d1.m_sheets; }
+    /// P5 + auditor C1: lex over KIIDs (via Cmp), NOT over m_sheets
+    /// pointer addresses.  The pre-refactor body
+    ///     return m_sheets < d1.m_sheets;
+    /// was an undefined-but-deterministic ordering by allocator-
+    /// assigned address that shifted across runs and across
+    /// ClearRepeatCloneCache cycles, silently corrupting any
+    /// std::set<SCH_SHEET_PATH> / std::map<SCH_SHEET_PATH> using the
+    /// default comparator.  Lex-by-KIID is value-stable and survives
+    /// any pointer churn.  Verified by
+    /// test_sheet_path_lifetime.cpp::OrderingStableAcrossRefresh.
+    bool operator<( const SCH_SHEET_PATH& d1 ) const { return Cmp( d1 ) < 0; }
 
 private:
     void initFromOther( const SCH_SHEET_PATH& aOther );
