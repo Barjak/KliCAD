@@ -490,6 +490,42 @@ void SCHEMATIC::ClearRepeatCloneCache() const
 }
 
 
+SCH_SHEET* SCHEMATIC::ResolveSheetTemplate( const SCH_SHEET_INSTANCE& aInstance ) const
+{
+    // Resolve via the live hierarchy walk: find the SCH_SHEET whose
+    // m_Uuid matches the instance's template_kiid.  The hierarchy
+    // already filters out synthetic clones (those are temporary
+    // expansions, never real on-canvas sheets), so we iterate the
+    // root + Hierarchy() once and pick the matching template.
+    //
+    // O(n) over the number of sheets in the schematic.  For very
+    // deep / wide hierarchies this could be cached; not optimized
+    // here because the existing CONNECTION_GRAPH consumers also
+    // walk linearly.
+    const KIID& templateKiid = aInstance.TemplateKiid();
+
+    for( const SCH_SHEET_PATH& path : Hierarchy() )
+    {
+        for( size_t i = 0; i < path.size(); ++i )
+        {
+            SCH_SHEET* sheet = path.GetSheet( i );
+
+            if( sheet && !sheet->IsSynthetic() && sheet->m_Uuid == templateKiid )
+                return sheet;
+        }
+    }
+
+    return nullptr;
+}
+
+
+SCH_SCREEN* SCHEMATIC::ResolveSheetScreen( const SCH_SHEET_INSTANCE& aInstance ) const
+{
+    SCH_SHEET* sheet = ResolveSheetTemplate( aInstance );
+    return sheet ? sheet->GetScreen() : nullptr;
+}
+
+
 void SCHEMATIC::GetContextualTextVars( wxArrayString* aVars ) const
 {
     auto add = [&]( const wxString& aVar )

@@ -23,6 +23,7 @@
 #include <eda_item.h>
 #include <embedded_files.h>
 #include <schematic_holder.h>
+#include <sch_sheet_instance.h>
 #include <sch_sheet_path.h>
 #include <schematic_settings.h>
 #include <project.h>
@@ -155,6 +156,30 @@ public:
     {
         return m_hierarchy.ResolveItem( aID, aPathOut, aAllowNullptrReturn );
     }
+
+    /**
+     * Resolve a SCH_SHEET_INSTANCE to its on-canvas template SCH_SHEET*.
+     *
+     * Returns the SCH_SHEET whose KIID equals the instance's
+     * template_kiid.  For slot 0 of a single-instance sheet (the
+     * common case) the result is just the on-canvas sheet itself.
+     * For multi-channel slots, the result is still the on-canvas
+     * sheet (templates are shared across slots) — the slot identity
+     * is in the SCH_SHEET_INSTANCE's slot_kiid, not in a separate
+     * SCH_SHEET object.
+     *
+     * Returns nullptr if no SCH_SHEET in the live hierarchy matches.
+     *
+     * @see SCH_SHEET_INSTANCE for the lifetime contract.
+     */
+    SCH_SHEET* ResolveSheetTemplate( const SCH_SHEET_INSTANCE& aInstance ) const;
+
+    /**
+     * Convenience: resolve to the SCH_SCREEN owning the template's
+     * body.  Returns nullptr if the instance does not resolve to a
+     * known template.
+     */
+    SCH_SCREEN* ResolveSheetScreen( const SCH_SHEET_INSTANCE& aInstance ) const;
 
     SCH_SHEET& Root() const
     {
