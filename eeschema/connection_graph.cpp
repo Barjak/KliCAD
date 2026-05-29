@@ -2909,10 +2909,36 @@ static SCH_SHEET* resolveHierPinPushTarget( const SCH_SHEET_PATH& aPath,
 {
     if( aPath.size() > 0 && aPinParent )
     {
-        SCH_SHEET* last = aPath.Last();
+        // P5a: read identity by value (SCH_SHEET_INSTANCE) instead of
+        // dereferencing aPath.Last(), which is a possibly-freed
+        // synthetic-clone SCH_SHEET* after a ClearRepeatCloneCache
+        // cycle (the original UAF site this refactor exists to fix).
+        // aPath.LastInstance() reads from SCH_SHEET_PATH's m_instances
+        // mirror (P4b) and is always valid.  The original condition
+        // `last->IsSynthetic() && last->GetTemplate() == aPinParent`
+        // is structurally equivalent to "the leaf identifies a non-
+        // template slot of aPinParent's template" — which on the
+        // instance is `!IsTemplateSlot() && TemplateKiid ==
+        // aPinParent->m_Uuid`.
+        //
+        // aPinParent itself is the on-canvas SCH_SHEET that owns the
+        // hier-pin; only template sheets own hier-pins (synthetic
+        // clones are field-shallow-copies that share the template's
+        // SCH_SCREEN), so dereferencing aPinParent is safe.
+        SCH_SHEET_INSTANCE lastInst = aPath.LastInstance();
 
-        if( last && last->IsSynthetic() && last->GetTemplate() == aPinParent )
-            return last;
+        if( !lastInst.IsTemplateSlot()
+                && lastInst.TemplateKiid() == aPinParent->m_Uuid )
+        {
+            // The leaf is a synthetic slot of aPinParent's template.
+            // Return the live clone pointer for this slot, re-minted
+            // from the SCHEMATIC cache if necessary.  MintRepeatClone
+            // deduplicates by (template, slotKIID) on m_repeatClones,
+            // so it returns the same pointer for repeated calls within
+            // the same ClearRepeatCloneCache window.
+            if( SCHEMATIC* sch = aPinParent->Schematic() )
+                return sch->MintRepeatClone( aPinParent, lastInst.SlotKiid() );
+        }
     }
 
     return aPinParent;
