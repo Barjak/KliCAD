@@ -3055,9 +3055,31 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
     {
         for( SCH_SHEET_PIN* pin : aParent->m_hier_pins )
         {
+            // P7b: enumerate every slot of the target template.  Pre-P7
+            // the synthetic clones provided distinct path leaves so a
+            // single push_back picked up the slot identity implicitly;
+            // post-P7 every clone is gone and slot identity lives on
+            // SCH_SHEET_INSTANCE.  For a non-repeat child this loop
+            // iterates once (slot 0 == template UUID) and is
+            // behaviourally identical to the pre-P7 path.  For repeat=N
+            // it produces N child-subgraph lookups, one per slot — the
+            // descent that pre-P7 used the clone mechanism to perform.
+            SCH_SHEET* target = pin->GetParent();
+            std::vector<KIID> slotIds;
+            slotIds.reserve( target->GetRepeatCount() );
+            slotIds.push_back( target->m_Uuid );  // slot 0
+
+            for( const KIID& k : target->GetRepeatInstances() )
+                slotIds.push_back( k );
+
+            for( const KIID& slotKiid : slotIds )
+            {
             SCH_SHEET_PATH path = aParent->m_sheet;
-            path.push_back( resolveHierPinPushTarget( aParent->m_sheet,
-                                                     pin->GetParent() ) );
+
+            if( slotKiid == target->m_Uuid )
+                path.push_back( target );
+            else
+                path.push_back_slot( target, slotKiid );
 
             auto it = m_sheet_to_subgraphs_map.find( path );
 
@@ -3128,6 +3150,7 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
                     }
                 }
             }
+            }  // close P7b slot enumeration
         }
 
         for( SCH_HIERLABEL* label : aParent->m_hier_ports )
@@ -3164,19 +3187,25 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
 
                 for( SCH_SHEET_PIN* pin : candidate->m_hier_pins )
                 {
-                    // Phase R3.3.1: the previous KIID prefilter compared
-                    // pin->GetParent()->m_Uuid (always the on-canvas template)
-                    // against aParent->m_sheet.Last()->m_Uuid (the clone's KIID
-                    // for synthetic-clone slot paths), incorrectly rejecting
-                    // all pins on clone-slot paths and preventing the bitName
-                    // fan-out below from running in the reverse direction.
-                    // The path-equality check that follows is the real
-                    // correctness gate, so drop the prefilter.
-                    SCH_SHEET_PATH pin_path = path;
-                    SCH_SHEET* pushTarget = resolveHierPinPushTarget( aParent->m_sheet, pin->GetParent() );
-                    pin_path.push_back( pushTarget );
-
-                    if( pin_path != aParent->m_sheet )
+                    // P7b: the original gate reconstructed pin_path =
+                    // parent_path + pushTarget and required equality
+                    // with aParent->m_sheet (the slot path on the
+                    // child side).  Pre-P7 push_back(clone) restored
+                    // slot identity automatically; post-P7 the clone
+                    // is gone, push_back(template) collapses to slot
+                    // 0, and slot K>0 always failed the equality check
+                    // — causing scalar body-side hier-labels to
+                    // silently never reach their parent's hier-pin.
+                    //
+                    // The gate's real intent is: "this candidate pin
+                    // belongs to aParent's child sheet."  Compare the
+                    // pin's template KIID against the slot leaf's
+                    // template KIID directly; no path reconstruction
+                    // required, and slot identity is preserved for
+                    // the matcher below (which reads slot info from
+                    // aParent->m_sheet itself).
+                    if( pin->GetParent()->m_Uuid
+                            != aParent->m_sheet.LastInstance().TemplateKiid() )
                         continue;
 
                     // Phase R3.3: mirror the bus-pin bit fan-out in the
