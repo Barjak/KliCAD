@@ -121,22 +121,34 @@ py::dict describe_sheet_path( const SCH_SHEET_PATH& aPath )
         return d;
     }
 
-    d[ "uuid" ]        = last->m_Uuid.AsStdString();
+    // P7b: emit per-path slot identity (SCH_SHEET_INSTANCE::SlotKiid)
+    // for `uuid`, `parent_uuid`, and every entry of `path_kiids`.
+    // Post-P7 every SCH_SHEET is the on-canvas template, so
+    // `aPath.Last()->m_Uuid` is the template's UUID — uniform across
+    // every multi-channel slot.  The slot disambiguator lives on
+    // m_instances (SlotKiid == TemplateKiid for slot 0 / single-
+    // instance, distinct per slot K>0).  The Python wire format
+    // matches the pre-P7 clone-era shape: single-instance schematics
+    // see the same UUIDs as before; multi-channel schematics now
+    // expose the per-slot identity that downstream consumers
+    // (selection, annotation, ratsnest) need.
+    d[ "uuid" ]        = aPath.LastInstance().SlotKiid().AsStdString();
     d[ "name" ]        = std::string( last->GetName().utf8_str() );
     d[ "page_number" ] = std::string( aPath.GetPageNumber().utf8_str() );
     d[ "file_name" ]   = std::string( last->GetFileName().utf8_str() );
     // P7: synthetic clones no longer exist.  Every SCH_SHEET reported
-    // is an on-canvas template.  Per-path slot identity is in the
-    // path's `kiids` list below — if a path's leaf KIID differs from
-    // the leaf SCH_SHEET's m_Uuid, the path represents slot K>0 of
-    // a multi-channel sheet.  is_synthetic is preserved as a boolean
-    // for klicad-python wire compatibility but always reads false.
+    // is an on-canvas template; per-slot disambiguation now lives in
+    // `uuid` and `path_kiids` (SlotKiid != template uuid means slot
+    // K>0).  is_synthetic is retained for wire compatibility but
+    // always reads false; downstream consumers should infer slot
+    // status from `uuid != path_kiids[depth]`'s template field if
+    // they need to distinguish.
     d[ "is_synthetic" ] = false;
     // SCH_SHEET_PATH starts at the virtual root, so user depth = size-1.
     d[ "depth" ]       = ( size > 0 ) ? static_cast<int>( size - 1 ) : 0;
 
-    if( size >= 2 && aPath.at( size - 2 ) )
-        d[ "parent_uuid" ] = aPath.at( size - 2 )->m_Uuid.AsStdString();
+    if( size >= 2 )
+        d[ "parent_uuid" ] = aPath.GetInstance( size - 2 ).SlotKiid().AsStdString();
     else
         d[ "parent_uuid" ] = std::string();
 
@@ -146,8 +158,7 @@ py::dict describe_sheet_path( const SCH_SHEET_PATH& aPath )
 
     py::list kiids;
     for( size_t i = 0; i < size; ++i )
-        kiids.append( aPath.at( i ) ? aPath.at( i )->m_Uuid.AsStdString()
-                                    : std::string() );
+        kiids.append( aPath.GetInstance( i ).SlotKiid().AsStdString() );
     d[ "path_kiids" ] = kiids;
     return d;
 }

@@ -259,7 +259,14 @@ bool SCH_SHEET_PATH::IsContainedWithin( const SCH_SHEET_PATH& aSheetPathToTest )
 
     for( size_t i = 0; i < aSheetPathToTest.size(); ++i )
     {
-        if( at( i )->m_Uuid != aSheetPathToTest.at( i )->m_Uuid )
+        // P7b: compare by SlotKiid (the per-slot disambiguator) rather
+        // than by SCH_SHEET pointer's m_Uuid (uniformly the template's
+        // KIID across all slots of a multi-channel sheet).  Pre-P7
+        // synthetic clones gave distinct m_Uuids per slot so the
+        // pointer-based check happened to work; without the clones
+        // it silently reports unrelated slot peers as containing
+        // one another.
+        if( GetInstance( i ).SlotKiid() != aSheetPathToTest.GetInstance( i ).SlotKiid() )
         {
             wxLogTrace( traceSchSheetPaths, "Sheet path '%s' is not within path '%s'.",
                         aSheetPathToTest.Path().AsString(), Path().AsString() );
@@ -1413,10 +1420,15 @@ void SCH_SHEET_LIST::SortByHierarchicalPageNumbers( bool aUpdateVirtualPageNums 
         []( const SCH_SHEET_PATH& a, const SCH_SHEET_PATH& b ) -> bool
         {
             // Find the divergence point in the paths
+            // P7b: compare by SlotKiid so multi-channel slot peers
+            // (same template KIID, distinct slot KIID) diverge at
+            // their slot leaf instead of being treated as identical.
             size_t common_len = 0;
             size_t min_len = std::min( a.size(), b.size() );
 
-            while( common_len < min_len && a.at( common_len )->m_Uuid == b.at( common_len )->m_Uuid )
+            while( common_len < min_len
+                   && a.GetInstance( common_len ).SlotKiid()
+                              == b.GetInstance( common_len ).SlotKiid() )
                 common_len++;
 
             // If one path is a prefix of the other, the shorter one comes first
@@ -1433,9 +1445,10 @@ void SCH_SHEET_LIST::SortByHierarchicalPageNumbers( bool aUpdateVirtualPageNums 
             SCH_SHEET* sheet_b = b.at( common_len );
 
             // Create partial paths to get to these sheets for page number comparison
+            // (uses SlotKiid for the same reason as the divergence walk above).
             KIID_PATH ancestor;
             for( size_t i = 0; i < common_len; i++ )
-                ancestor.push_back( a.at( i )->m_Uuid );
+                ancestor.push_back( a.GetInstance( i ).SlotKiid() );
 
             // Compare page numbers - use the last sheet's page number
             wxString page_a = sheet_a->getPageNumber( ancestor );
