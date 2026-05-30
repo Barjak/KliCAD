@@ -466,7 +466,8 @@ py::dict sch_state_set_symbol_value( const std::string& kiid_str,
 // ──────────────────────────────────────────────────────────────────────────
 py::dict sch_state_set_symbol_field( const std::string& kiid_str,
                                      const std::string& field_name,
-                                     const std::string& new_value )
+                                     const std::string& new_value,
+                                     bool               visible )
 {
     if( field_name.empty() )
         throw std::invalid_argument( "set_symbol_field: field_name is empty" );
@@ -496,6 +497,7 @@ py::dict sch_state_set_symbol_field( const std::string& kiid_str,
         if( field )
         {
             field->SetText( fval );
+            field->SetVisible( visible );
         }
         else
         {
@@ -504,6 +506,7 @@ py::dict sch_state_set_symbol_field( const std::string& kiid_str,
             // generation just like mandatory ones.
             SCH_FIELD newField( sym, FIELD_T::USER, fname );
             newField.SetText( fval );
+            newField.SetVisible( visible );
             sym->AddField( newField );
             created = true;
         }
@@ -519,6 +522,202 @@ py::dict sch_state_set_symbol_field( const std::string& kiid_str,
     d[ "kiid" ]    = kiid_str;
     d[ "field" ]   = field_name;
     d[ "value" ]   = new_value;
+    d[ "visible" ] = visible;
+    d[ "created" ] = created;
+    return d;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
+// set_label_field — generic field setter for hierarchical / global / local
+// labels.  SCH_LABEL_BASE carries `m_fields` exactly like SCH_SYMBOL; the
+// klicad-python spec-pane consumer needs this to stamp `Klicad.SpecSrc`
+// on emitted hier-labels alongside the symbols they connect.
+// ──────────────────────────────────────────────────────────────────────────
+py::dict sch_state_set_label_field( const std::string& kiid_str,
+                                    const std::string& field_name,
+                                    const std::string& new_value,
+                                    bool               visible )
+{
+    if( field_name.empty() )
+        throw std::invalid_argument( "set_label_field: field_name is empty" );
+
+    SCH_EDIT_FRAME* frame = require_sch_edit_frame();
+    SCHEMATIC&      sch   = frame->Schematic();
+
+    KIID            kiid( wxString::FromUTF8( kiid_str.c_str() ) );
+    SCH_LABEL_BASE* label  = nullptr;
+    SCH_SCREEN*     screen = nullptr;
+
+    // Walk every hierarchy path; on each, scan the screen's items for a
+    // SCH_LABEL_BASE with the matching KIID.  Mirrors the symbol path's
+    // `find_symbol_by_kiid` shape but for labels.
+    for( const SCH_SHEET_PATH& path : sch.Hierarchy() )
+    {
+        SCH_SCREEN* s = path.LastScreen();
+
+        if( !s )
+            continue;
+
+        for( SCH_ITEM* item : s->Items() )
+        {
+            if( !item->IsType( { SCH_LABEL_T, SCH_GLOBAL_LABEL_T,
+                                 SCH_HIER_LABEL_T, SCH_DIRECTIVE_LABEL_T } ) )
+                continue;
+
+            if( item->m_Uuid == kiid )
+            {
+                label = static_cast<SCH_LABEL_BASE*>( item );
+                screen = s;
+                break;
+            }
+        }
+
+        if( label )
+            break;
+    }
+
+    if( !label )
+        throw std::runtime_error( "set_label_field: no label with kiid '" + kiid_str + "'" );
+
+    wxString fname = wxString::FromUTF8( field_name.c_str() );
+    wxString fval  = wxString::FromUTF8( new_value.c_str() );
+
+    bool created = false;
+
+    {
+        SCH_COMMIT commit( frame );
+        commit.Modify( label, screen );
+
+        // SCH_LABEL_BASE stores fields in a flat vector (no GetField by
+        // name like SCH_SYMBOL has); search by name manually.
+        SCH_FIELD* field = nullptr;
+
+        for( SCH_FIELD& f : label->GetFields() )
+        {
+            if( f.GetName() == fname )
+            {
+                field = &f;
+                break;
+            }
+        }
+
+        if( field )
+        {
+            field->SetText( fval );
+            field->SetVisible( visible );
+        }
+        else
+        {
+            SCH_FIELD newField( label, FIELD_T::USER, fname );
+            newField.SetText( fval );
+            newField.SetVisible( visible );
+            label->GetFields().push_back( newField );
+            created = true;
+        }
+
+        commit.Push( wxT( "KliCAD: set_label_field" ) );
+    }
+
+    if( frame->GetCanvas() )
+        frame->GetCanvas()->Refresh();
+
+    py::dict d;
+    d[ "ok" ]      = true;
+    d[ "kiid" ]    = kiid_str;
+    d[ "field" ]   = field_name;
+    d[ "value" ]   = new_value;
+    d[ "visible" ] = visible;
+    d[ "created" ] = created;
+    return d;
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
+// set_sheet_field — generic field setter for hierarchical sheets.
+// SCH_SHEET carries `m_fields` (built-in: Sheetname, Sheetfile + USER
+// fields after); spec-pane consumer stamps `Klicad.SpecSrc` on the
+// sheet that hosted the SubcircuitInstance.
+// ──────────────────────────────────────────────────────────────────────────
+py::dict sch_state_set_sheet_field( const std::string& kiid_str,
+                                    const std::string& field_name,
+                                    const std::string& new_value,
+                                    bool               visible )
+{
+    if( field_name.empty() )
+        throw std::invalid_argument( "set_sheet_field: field_name is empty" );
+
+    SCH_EDIT_FRAME* frame = require_sch_edit_frame();
+    SCHEMATIC&      sch   = frame->Schematic();
+
+    KIID        kiid( wxString::FromUTF8( kiid_str.c_str() ) );
+    SCH_SHEET*  sheet  = nullptr;
+    SCH_SCREEN* screen = nullptr;
+
+    for( const SCH_SHEET_PATH& path : sch.Hierarchy() )
+    {
+        SCH_SCREEN* s = path.LastScreen();
+
+        if( !s )
+            continue;
+
+        for( SCH_ITEM* item : s->Items() )
+        {
+            if( item->Type() != SCH_SHEET_T )
+                continue;
+
+            if( item->m_Uuid == kiid )
+            {
+                sheet  = static_cast<SCH_SHEET*>( item );
+                screen = s;
+                break;
+            }
+        }
+
+        if( sheet )
+            break;
+    }
+
+    if( !sheet )
+        throw std::runtime_error( "set_sheet_field: no sheet with kiid '" + kiid_str + "'" );
+
+    wxString fname = wxString::FromUTF8( field_name.c_str() );
+    wxString fval  = wxString::FromUTF8( new_value.c_str() );
+
+    bool created = false;
+
+    {
+        SCH_COMMIT commit( frame );
+        commit.Modify( sheet, screen );
+
+        SCH_FIELD* field = sheet->GetField( fname );
+
+        if( field )
+        {
+            field->SetText( fval );
+            field->SetVisible( visible );
+        }
+        else
+        {
+            SCH_FIELD newField( sheet, FIELD_T::USER, fname );
+            newField.SetText( fval );
+            newField.SetVisible( visible );
+            sheet->AddField( newField );
+            created = true;
+        }
+
+        commit.Push( wxT( "KliCAD: set_sheet_field" ) );
+    }
+
+    if( frame->GetCanvas() )
+        frame->GetCanvas()->Refresh();
+
+    py::dict d;
+    d[ "ok" ]      = true;
+    d[ "kiid" ]    = kiid_str;
+    d[ "field" ]   = field_name;
+    d[ "value" ]   = new_value;
+    d[ "visible" ] = visible;
     d[ "created" ] = created;
     return d;
 }
@@ -1427,6 +1626,7 @@ Raises RuntimeError if no symbol with that kiid is in the hierarchy.
 
     m.def( "set_symbol_field", &sch_state_set_symbol_field,
            py::arg( "kiid" ), py::arg( "field_name" ), py::arg( "value" ),
+           py::arg( "visible" ) = true,
            R"DOC(Set a named field on a placed symbol.  Creates a USER field if absent.
 
 Used both for built-in fields ('Footprint', 'Datasheet', 'Description') and
@@ -1436,10 +1636,36 @@ for SPICE annotations the netlist generator picks up:
     set_symbol_field(kiid, 'Sim_Model',  '2N3904')
     set_symbol_field(kiid, 'Sim_Pins',   '1=C 2=B 3=E')
 
+visible: controls SCH_FIELD::IsVisible — defaults True for backward
+compat with existing callers.  Pass False for machine-readable metadata
+that shouldn't render on the canvas (e.g. Klicad.SpecSrc for the
+eeschema spec pane).
+
 USER fields participate in netlist generation just like mandatory ones.
 
-Returns {ok: bool, kiid: str, field: str, value: str, created: bool}.
+Returns {ok: bool, kiid: str, field: str, value: str, visible: bool,
+created: bool}.
 Raises ValueError on empty field name; RuntimeError if symbol kiid not found.
+)DOC" );
+
+    m.def( "set_label_field", &sch_state_set_label_field,
+           py::arg( "kiid" ), py::arg( "field_name" ), py::arg( "value" ),
+           py::arg( "visible" ) = true,
+           R"DOC(Set a named field on a placed hierarchical / global / local label.
+Creates a USER field if absent.  Mirrors set_symbol_field; used by the
+spec-pane consumer to stamp Klicad.SpecSrc on emitted hier-labels.
+
+Returns {ok, kiid, field, value, visible, created}.
+)DOC" );
+
+    m.def( "set_sheet_field", &sch_state_set_sheet_field,
+           py::arg( "kiid" ), py::arg( "field_name" ), py::arg( "value" ),
+           py::arg( "visible" ) = true,
+           R"DOC(Set a named field on a placed hierarchical sheet.  Creates a
+USER field if absent.  Mirrors set_symbol_field; used by the spec-pane
+consumer to stamp Klicad.SpecSrc on emitted SubcircuitInstance sheets.
+
+Returns {ok, kiid, field, value, visible, created}.
 )DOC" );
 
     m.def( "set_symbol_rotation", &sch_state_set_symbol_rotation,
