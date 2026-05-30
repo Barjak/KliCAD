@@ -105,6 +105,7 @@
 #include <widgets/bitmap_button.h>
 #include <widgets/sch_properties_panel.h>
 #include <widgets/sch_search_pane.h>
+#include <widgets/sch_spec_pane.h>
 #include <wildcards_and_files_ext.h>
 #include <wx/cmdline.h>
 #include <wx/app.h>
@@ -169,6 +170,7 @@ SCH_EDIT_FRAME::SCH_EDIT_FRAME( KIWAY* aKiway, wxWindow* aParent ) :
         m_netNavigatorMenuNetName(),
         m_highlightedConnChanged( false ),
         m_designBlocksPane( nullptr ),
+        m_specPane( nullptr ),
         m_remoteSymbolPane( nullptr ),
         m_currentVariantCtrl( nullptr )
 {
@@ -237,6 +239,7 @@ SCH_EDIT_FRAME::SCH_EDIT_FRAME( KIWAY* aKiway, wxWindow* aParent ) :
 
     m_selectionFilterPanel = new PANEL_SCH_SELECTION_FILTER( this );
     m_designBlocksPane = new SCH_DESIGN_BLOCK_PANE( this, nullptr, m_designBlockHistoryList );
+    m_specPane = new SCH_SPEC_PANE( this );
 
     m_auimgr.SetManagedWindow( this );
 
@@ -296,6 +299,23 @@ SCH_EDIT_FRAME::SCH_EDIT_FRAME( KIWAY* aKiway, wxWindow* aParent ) :
                       .CloseButton( true )
                       .DestroyOnClose( false )
                       .Show( m_show_search ) );
+
+    // Spec pane — right-hand klicad-python text editor; commits regen
+    // the schematic via subprocess on Enter / focus-loss.  See
+    // widgets/sch_spec_pane.h for the v1 scope (no project-file
+    // association yet; no bidirectional cursor sync yet).
+    m_auimgr.AddPane( m_specPane, EDA_PANE()
+                      .Name( wxS( "SpecPane" ) )
+                      .Right()
+                      .Caption( _( "Spec" ) )
+                      .Layer( 3 )
+                      .Position( 1 )
+                      .CloseButton( true )
+                      .DestroyOnClose( false )
+                      .MinSize( FromDIP( wxSize( 240, 200 ) ) )
+                      .BestSize( FromDIP( wxSize( 360, 600 ) ) )
+                      .FloatingSize( FromDIP( wxSize( 480, 600 ) ) )
+                      .Show( false ) );
 
     RestoreAuiLayout();
     FinishAUIInitialization();

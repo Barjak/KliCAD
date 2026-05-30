@@ -59,6 +59,7 @@ class SCH_JUNCTION;
 class SCHEMATIC;
 class SCH_COMMIT;
 class SCH_DESIGN_BLOCK_PANE;
+class SCH_SPEC_PANE;
 class PANEL_REMOTE_SYMBOL;
 class DIALOG_BOOK_REPORTER;
 class DIALOG_ERC;
@@ -764,6 +765,16 @@ public:
 
     SCH_DESIGN_BLOCK_PANE* GetDesignBlockPane() const { return m_designBlocksPane; }
 
+    SCH_SPEC_PANE* GetSpecPane() const { return m_specPane; }
+
+    /// Public accessor for the AUI manager.  `m_auimgr` lives on
+    /// EDA_BASE_FRAME as a protected member; the spec-pane bindings
+    /// (eeschema/api/bindings_spec_pane.cpp) need to flip pane
+    /// visibility from outside the frame.  Returning the live
+    /// reference keeps the call sites short and avoids one-off
+    /// wrapper methods per AUI operation.
+    wxAuiManager& GetAuiManager() { return m_auimgr; }
+
     void SetNetListerCommand( const wxString& aCommand ) { m_netListerCommand = aCommand; }
 
     /**
@@ -1098,6 +1109,7 @@ private:
 
     std::vector<LIB_ID>         m_designBlockHistoryList;
     SCH_DESIGN_BLOCK_PANE*      m_designBlocksPane;
+    SCH_SPEC_PANE*              m_specPane;
     PANEL_REMOTE_SYMBOL*        m_remoteSymbolPane;
 
     wxChoice*                   m_currentVariantCtrl;
