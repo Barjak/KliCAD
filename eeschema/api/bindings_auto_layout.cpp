@@ -19,8 +19,12 @@
 #include <pybind11/stl.h>
 
 #include <eeschema_helpers.h>
-#include <schematic.h>
+#include <io/io_mgr.h>
+#include <sch_io/sch_io.h>
+#include <sch_io/sch_io_mgr.h>
 #include <sch_screen.h>
+#include <sch_sheet.h>
+#include <schematic.h>
 
 #include "../auto_layout/sch_auto_layout.h"
 
@@ -28,12 +32,33 @@ namespace py = pybind11;
 
 namespace {
 
-py::dict auto_layout_run( const std::string& aSchPath )
+py::dict auto_layout_run( const std::string& aSchPath, py::list aNets )
 {
-	// Open the schematic — matching the convention used by
-	// JobSchErc and other CLI-style operations.  Eager open
-	// (not deferred) so layout-result errors surface here, not
-	// at file-write time.
+	// Marshal the Python net spec into the C++ NetSpec list.
+	// Expected shape from klicad-python:
+	//   [(net_name: str, [(sym_ref: str, pin_num: str), ...]), ...]
+	std::vector<klicad::auto_layout::NetSpec> nets;
+	nets.reserve( aNets.size() );
+
+	for( const py::handle& netHandle : aNets )
+	{
+		py::tuple netT = netHandle.cast<py::tuple>();
+		klicad::auto_layout::NetSpec spec;
+		spec.net_name = netT[0].cast<std::string>();
+
+		py::list pinList = netT[1].cast<py::list>();
+		for( const py::handle& pinHandle : pinList )
+		{
+			py::tuple pinT = pinHandle.cast<py::tuple>();
+			spec.pins.emplace_back(
+				pinT[0].cast<std::string>(),
+				pinT[1].cast<std::string>() );
+		}
+		nets.push_back( std::move( spec ) );
+	}
+
+	// Open the schematic — matching the convention used by JobSchErc
+	// and other CLI-style operations.
 	SCHEMATIC* sch = EESCHEMA_HELPERS::LoadSchematic( aSchPath, true, false );
 	if( sch == nullptr )
 	{
@@ -53,11 +78,22 @@ py::dict auto_layout_run( const std::string& aSchPath )
 	}
 
 	klicad::auto_layout::LayoutReport report =
-		klicad::auto_layout::runAutoLayout( *screen );
+		klicad::auto_layout::runAutoLayout( *screen, nets );
 
-	// TODO (next session): save the schematic back to disk so the
-	// layout changes persist.  For Session 1, layout runs but is
-	// thrown away on return.
+	// Save the modified schematic back to disk via the SCH_KICAD IO
+	// plugin — the standard JobSchPlot save pattern.
+	if( report.ok )
+	{
+		try
+		{
+			IO_RELEASER<SCH_IO> pi( SCH_IO_MGR::FindPlugin( SCH_IO_MGR::SCH_KICAD ) );
+			pi->SaveSchematicFile( aSchPath, &sch->Root(), sch );
+		}
+		catch( const std::exception& )
+		{
+			report.ok = false;
+		}
+	}
 
 	py::dict result;
 	result[ "ok" ]               = report.ok;
@@ -74,8 +110,9 @@ py::dict auto_layout_run( const std::string& aSchPath )
 
 void klicad_register_auto_layout_bindings( py::module_& m )
 {
-	m.def( "run", &auto_layout_run, py::arg( "sch_path" ),
+	m.def( "run", &auto_layout_run, py::arg( "sch_path" ), py::arg( "nets" ),
 	       "Run port-aware auto-layout on the schematic at sch_path.  "
-	       "Returns a dict { ok, symbols_placed, wires_emitted, crossings, "
+	       "nets is a list of (net_name, [(sym_ref, pin_number), ...]) "
+	       "tuples.  Returns { ok, symbols_placed, wires_emitted, crossings, "
 	       "bends, total_wirelength }." );
 }

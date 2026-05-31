@@ -17,18 +17,18 @@ class SCH_SCREEN;
 namespace klicad::auto_layout {
 
 /**
- * @brief Run the full pipeline on @p aScreen and return the
- *        layout report.
+ * @brief Run the full pipeline on @p aScreen with @p aNets net spec.
+ *        Returns the layout report.
  *
  * Equivalent to:
  *
  *     SchOgdfAdapter adapter( aScreen );
- *     return adapter.run();
+ *     return adapter.run( aNets );
  *
  * Provided as a free function for the IPC binding's convenience
  * — no state to manage when the caller doesn't need to inspect
  * intermediate OGDF graph state.
  */
-LayoutReport runAutoLayout( SCH_SCREEN& aScreen );
+LayoutReport runAutoLayout( SCH_SCREEN& aScreen, const std::vector<NetSpec>& aNets );
 
 }  // namespace klicad::auto_layout

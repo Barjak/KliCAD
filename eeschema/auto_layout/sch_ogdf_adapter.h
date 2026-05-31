@@ -23,6 +23,8 @@
 #pragma once
 
 #include <map>
+#include <string>
+#include <utility>
 #include <vector>
 
 // OGDF / port-constraint fork.
@@ -57,6 +59,21 @@ struct LayoutReport
 	double total_wirelength = 0.0;
 };
 
+
+/**
+ * @brief One net's pin-membership spec, used by buildEdgesFromSpec.
+ *
+ * Each entry is a (symbol-reference, pin-number) pair identifying
+ * one terminal of the net.  Source-of-truth lives in klicad-python's
+ * `Circuit._nets`; this struct is what the IPC binding marshals
+ * across.
+ */
+struct NetSpec
+{
+	std::string                                       net_name;
+	std::vector<std::pair<std::string, std::string>>  pins;  // (sym_ref, pin_number)
+};
+
 /**
  * @brief Adapter between SCH_SCREEN and the OGDF-fork layout
  *        pipeline.
@@ -75,11 +92,30 @@ public:
 	explicit SchOgdfAdapter( SCH_SCREEN& aScreen );
 	~SchOgdfAdapter();
 
-	/** Walk the screen's items, populate the OGDF graph. */
+	/** Walk the screen's items, populate the OGDF graph with
+	 *  one node per symbol and one Port per pin.  Edges are
+	 *  added separately via either buildEdgesFromSpec (preferred
+	 *  for spec-driven layout) or buildEdgesFromScreen (walks
+	 *  existing SCH_LINE wires; useful for re-layout of a
+	 *  hand-wired schematic). */
 	void buildFromScreen();
 
+	/** Populate edges from an explicit net-list spec, typically
+	 *  marshaled from klicad-python's `Circuit._nets`.  For each
+	 *  net with two or more pins, emits OGDF edges in a star
+	 *  pattern (anchor pin → every other pin), with port
+	 *  endpoints bound via PortGraphAttributes::setEdgePorts.
+	 *
+	 *  Power/ground nets (per the existing net-classifier
+	 *  conventions documented in HANDOFF.md Stage 3) are
+	 *  filtered by the caller — pass only nets you want routed.
+	 *
+	 *  Returns the number of OGDF edges created. */
+	int buildEdgesFromSpec( const std::vector<NetSpec>& aNets );
+
 	/** Run port-aware Sugiyama + orthogonal routing.
-	 *  Pre: buildFromScreen has been called. */
+	 *  Pre: buildFromScreen has been called and edges have been
+	 *  added (via buildEdgesFromSpec). */
 	void runLayout();
 
 	/** Translate OGDF placements + bend lists back to symbol
@@ -87,8 +123,12 @@ public:
 	 *  LayoutReport summarizing what changed. */
 	LayoutReport writeBackToScreen();
 
-	/** One-shot convenience. */
-	LayoutReport run();
+	/** One-shot convenience.  Equivalent to:
+	 *    buildFromScreen();
+	 *    buildEdgesFromSpec(aNets);
+	 *    runLayout();
+	 *    return writeBackToScreen();   */
+	LayoutReport run( const std::vector<NetSpec>& aNets );
 
 	/** Read-only access to the underlying OGDF graph for tests. */
 	const ogdf::Graph&                  graph() const { return m_graph; }
@@ -101,10 +141,11 @@ private:
 	ogdf::GraphAttributes      m_GA;
 	ogdf::PortGraphAttributes  m_PGA;
 
-	// Cross-reference: SCH_SYMBOL ↔ OGDF node, SCH_PIN ↔ Port index.
-	std::map<SCH_SYMBOL*, ogdf::node>                   m_symbolToNode;
-	std::map<ogdf::node, SCH_SYMBOL*>                   m_nodeToSymbol;
-	std::map<SCH_PIN*, std::pair<ogdf::node, int>>      m_pinToPort;
+	// Cross-reference indices.
+	std::map<SCH_SYMBOL*, ogdf::node>           m_symbolToNode;
+	std::map<ogdf::node, SCH_SYMBOL*>           m_nodeToSymbol;
+	std::map<std::string, SCH_SYMBOL*>          m_refToSymbol;
+	std::map<std::pair<ogdf::node, std::string>, int> m_nodePinToPort;
 
 	// --- buildFromScreen substeps ---
 
@@ -119,16 +160,9 @@ private:
 	/** Per-symbol: for each pin in the LIB_SYMBOL, add a Port to
 	 *  PortGraphAttributes with side derived from the pin's
 	 *  orientation angle and anchor (x, y) relative to the
-	 *  symbol body's top-left corner. */
+	 *  symbol body's top-left corner.  Indexes by (node,
+	 *  pin_number) into m_nodePinToPort. */
 	void buildPorts();
-
-	/** Use the screen's CONNECTION_GRAPH (or, simpler for the
-	 *  flat M1 case, walk SCH_LINE items + their endpoints) to
-	 *  derive the edge set.  Power and labeled-hierarchical
-	 *  nets are filtered out — they don't get OGDF-routed,
-	 *  they get the annotate-stage power-symbol treatment per
-	 *  HANDOFF.md Stage 3. */
-	void buildEdges();
 };
 
 }  // namespace klicad::auto_layout
