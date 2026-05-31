@@ -150,6 +150,22 @@ static int g_lastUnsavedChangesResult = -1;
 bool HandleUnsavedChanges( wxWindow* aParent, const wxString& aMessage,
                            const std::function<bool()>& aSaveFunction )
 {
+    // IPC-session escape hatch: when KLICAD_DISCARD_UNSAVED=1 is in the
+    // environment, treat every save-changes prompt as 'No' (discard) so
+    // automated emit pipelines aren't blocked by modal dialogs the IPC
+    // layer can't dismiss.  Set this temporarily during klicad-python
+    // sessions; unset when interactive use resumes.
+    if( wxGetEnv( wxS( "KLICAD_DISCARD_UNSAVED" ), nullptr ) )
+    {
+        wxString v;
+        wxGetEnv( wxS( "KLICAD_DISCARD_UNSAVED" ), &v );
+        if( v == wxS( "1" ) )
+        {
+            g_lastUnsavedChangesResult = wxID_NO;
+            return true;
+        }
+    }
+
     g_lastUnsavedChangesResult = UnsavedChangesDialog( aParent, aMessage );
     switch( g_lastUnsavedChangesResult )
     {

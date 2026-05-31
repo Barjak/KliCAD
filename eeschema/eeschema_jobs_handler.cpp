@@ -1286,6 +1286,45 @@ int EESCHEMA_JOBS_HANDLER::JobSchErc( JOB* aJob )
     if( !sch )
         return CLI::EXIT_CODES::ERR_INVALID_INPUT_FILE;
 
+    // getSchematic()'s GUI branch returns the editor frame's live
+    // SCHEMATIC, but if no file has been loaded into that frame yet
+    // (kiway->Player(FRAME_SCH, true) constructed a fresh frame, or
+    // ss.open_schematic() hasn't completed binding), m_project /
+    // m_rootSheet are still null.  SCHEMATIC::Project() then returns
+    // *m_project on a null pointer and the first virtual call SEGVs.
+    //
+    // Fall back to disk-loading the schematic explicitly when we have
+    // an m_filename and the live SCHEMATIC isn't bound.  This matches
+    // the non-GUI / no-open-project branch's behavior and lets ERC
+    // run reliably from IPC regardless of editor-frame state.
+    std::unique_ptr<SCHEMATIC> fallbackSch;
+
+    if( !sch->IsValid() )
+    {
+        if( ercJob->m_filename.IsEmpty() )
+        {
+            m_reporter->Report( _( "Schematic is loaded but not fully initialized "
+                                   "and no fallback filename was provided.  Pass "
+                                   "an explicit schematic path to run ERC against "
+                                   "the on-disk file.\n" ),
+                                RPT_SEVERITY_ERROR );
+            return CLI::EXIT_CODES::ERR_INVALID_INPUT_FILE;
+        }
+
+        SCHEMATIC* loaded = EESCHEMA_HELPERS::LoadSchematic( ercJob->m_filename, true, false );
+
+        if( !loaded || !loaded->IsValid() )
+        {
+            m_reporter->Report( wxString::Format( _( "Failed to load schematic from disk: %s\n" ),
+                                                  ercJob->m_filename ),
+                                RPT_SEVERITY_ERROR );
+            return CLI::EXIT_CODES::ERR_INVALID_INPUT_FILE;
+        }
+
+        fallbackSch.reset( loaded );
+        sch = loaded;
+    }
+
     aJob->SetTitleBlock( sch->RootScreen()->GetTitleBlock() );
     sch->Project().ApplyTextVars( aJob->GetVarOverrides() );
 
