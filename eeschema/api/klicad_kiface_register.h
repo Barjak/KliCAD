@@ -30,6 +30,7 @@
 
 // Per-binding register functions (one per kiface-resident bindings_*.cpp).
 void klicad_register_annotation_bindings( pybind11::module_& m );
+void klicad_register_auto_layout_bindings( pybind11::module_& m );
 void klicad_register_hierarchy_bindings( pybind11::module_& m );
 void klicad_register_ratsnest_bindings( pybind11::module_& m );
 void klicad_register_sch_actions_bindings( pybind11::module_& m );

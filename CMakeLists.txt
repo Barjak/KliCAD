@@ -1107,6 +1107,18 @@ add_subdirectory( resources )
 add_subdirectory( thirdparty )
 add_subdirectory( libs )
 add_subdirectory( common )
+
+# OGDF fork at ../ogdf carrying our port-constraint extensions
+# (branch feature/port-constraints).  Sibling dir, not vendored,
+# because the fork is independently version-controlled.  Builds
+# libOGDF + libCOIN that the eeschema/auto_layout/ subsystem
+# links against.
+if( NOT TARGET OGDF )
+    add_subdirectory( "${CMAKE_CURRENT_SOURCE_DIR}/../ogdf"
+                      "${CMAKE_BINARY_DIR}/ogdf_build"
+                      EXCLUDE_FROM_ALL )
+endif()
+
 add_subdirectory( 3d-viewer )
 add_subdirectory( eeschema )
 add_subdirectory( gerbview )

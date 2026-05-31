@@ -78,6 +78,10 @@ void klicad_register_eeschema_bindings()
             { "klicad_native_annotation",
               "KliCAD schematic annotation binding (kiface-loaded).",
               &klicad_register_annotation_bindings },
+            { "klicad_native_auto_layout",
+              "KliCAD port-aware OGDF-based schematic auto-layout "
+              "(kiface-loaded).  See HANDOFF.md Option C.",
+              &klicad_register_auto_layout_bindings },
             { "klicad_native_hierarchy",
               "KliCAD schematic hierarchy / sheet navigation (kiface-loaded).",
               &klicad_register_hierarchy_bindings },

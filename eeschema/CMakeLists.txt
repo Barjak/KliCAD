@@ -506,6 +506,7 @@ if( KICAD_IPC_API )
         ${EESCHEMA_SRCS}
         api/api_handler_sch.cpp
         api/bindings_annotation.cpp
+        api/bindings_auto_layout.cpp
         api/bindings_hierarchy.cpp
         api/bindings_ratsnest.cpp
         api/bindings_sch_actions.cpp
@@ -656,6 +657,12 @@ add_subdirectory( navlib )
 target_link_libraries( eeschema_kiface_objects PUBLIC eeschema_navlib)
 
 add_dependencies( eeschema_kiface_objects eeschema_navlib )
+
+# Port-aware OGDF-based auto-layout subsystem; see HANDOFF.md
+# (Option C) and research/c5-adapter-design.md.
+add_subdirectory( auto_layout )
+target_link_libraries( eeschema_kiface_objects PUBLIC klicad_auto_layout )
+add_dependencies( eeschema_kiface_objects klicad_auto_layout )
 
 add_library( eeschema_kiface MODULE
     eeschema.cpp

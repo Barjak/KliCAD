@@ -10,23 +10,21 @@ add_library( klicad_auto_layout STATIC
     sch_auto_layout.cpp
     )
 
-target_include_directories( klicad_auto_layout PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
+target_include_directories( klicad_auto_layout
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/eeschema
+        ${CMAKE_SOURCE_DIR}/common
+        ${CMAKE_SOURCE_DIR}/include
     )
 
-# OGDF: forked at ../../../ogdf with our port-constraint extensions
-# (branch feature/port-constraints).  Build it as a sibling
-# subdirectory so headers + the libOGDF target are visible.
-#
-# The actual add_subdirectory call lives in the top-level
-# KliCAD CMakeLists.txt to avoid double-include if anything else
-# in the eeschema tree later needs OGDF.
+# OGDF target is created by the add_subdirectory at top-level
+# (KliCAD CMakeLists.txt).  Public link so eeschema_kiface_objects
+# transitively gets the OGDF include path when it links us.
+target_link_libraries( klicad_auto_layout PUBLIC OGDF )
 
-target_link_libraries( klicad_auto_layout PUBLIC
-    OGDF
-    eeschema_kiface_objects   # for SCH_SCREEN etc. headers; check exact target name in top CMakeLists
-    )
-
-# ASan flags inherited from top-level CFLAGS so the static lib
-# matches the kiface's runtime; no special handling needed here
-# as long as the top build is configured with -fsanitize=address.
+# Use the same C++ settings + warning suppressions as eeschema.
+# wxWidgets headers come transitively via eeschema's compile
+# environment; if the library ever needs wx directly, add
+# ${wxWidgets_INCLUDE_DIRS} to target_include_directories.
