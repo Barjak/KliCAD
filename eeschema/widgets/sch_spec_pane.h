@@ -83,6 +83,19 @@ public:
      */
     void CommitAndRegen();
 
+    /**
+     * Look for a sibling spec file next to the currently-open
+     * `.kicad_sch` and call SetSpecPath() if one is found.
+     *
+     * Convention, checked in order:
+     *   1. `<schematic basename>.spec.py`  (e.g. driver8.spec.py)
+     *   2. `build_schematic.py`            (de-facto from the design-loop agent)
+     *
+     * No-op when the pane already has a spec path set or no schematic
+     * is loaded.  Safe to call repeatedly — only the first match wins.
+     */
+    void DiscoverSpecForCurrentSchematic();
+
 private:
     /// Bind on the editor.  `wxEVT_KEY_DOWN` with `WXK_RETURN` does
     /// commit-on-Enter (we use KEY_DOWN rather than the Scintilla
@@ -95,6 +108,17 @@ private:
     /// that as an implicit commit so users don't lose work on
     /// inadvertent focus changes.
     void onKillFocus( wxFocusEvent& aEvent );
+
+    /// Re-applied on construction and on wxEVT_SYS_COLOUR_CHANGED.
+    /// Installs the dark code-editor palette, monospace font, and
+    /// per-token Python syntax coloring against the Scintilla
+    /// `wxSTC_LEX_PYTHON` lexer.
+    void setupStyles();
+    void onThemeChanged( wxSysColourChangedEvent& aEvent );
+
+    /// On the pane becoming visible, run DiscoverSpecForCurrentSchematic()
+    /// so it auto-loads the project's spec without a manual IPC call.
+    void onShow( wxShowEvent& aEvent );
 
     SCH_EDIT_FRAME*   m_frame;
     wxStyledTextCtrl* m_editor;

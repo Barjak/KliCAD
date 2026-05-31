@@ -241,6 +241,7 @@ public:
     static TOOL_ACTION navigatePrevious;
     static TOOL_ACTION navigateNext;
     static TOOL_ACTION showHierarchy;
+    static TOOL_ACTION showSpecPane;
     static TOOL_ACTION hypertextCommand;
 
     // Global edit tools

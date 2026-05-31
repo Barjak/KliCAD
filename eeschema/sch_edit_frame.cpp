@@ -768,6 +768,12 @@ void SCH_EDIT_FRAME::setupUIConditions()
                 return m_auimgr.GetPane( SchematicHierarchyPaneName() ).IsShown();
             };
 
+    auto specPaneCond =
+            [ this ] ( const SELECTION& aSel )
+            {
+                return m_auimgr.GetPane( wxS( "SpecPane" ) ).IsShown();
+            };
+
     auto netNavigatorCond =
             [ this ] (const SELECTION& aSel )
             {
@@ -818,6 +824,7 @@ void SCH_EDIT_FRAME::setupUIConditions()
 
     mgr->SetConditions( SCH_ACTIONS::showSearch,           CHECK( searchPaneCond ) );
     mgr->SetConditions( SCH_ACTIONS::showHierarchy,        CHECK( hierarchyNavigatorCond ) );
+    mgr->SetConditions( SCH_ACTIONS::showSpecPane,         CHECK( specPaneCond ) );
     mgr->SetConditions( SCH_ACTIONS::showNetNavigator,     CHECK( netNavigatorCond ) );
     mgr->SetConditions( ACTIONS::showProperties,           CHECK( propertiesCond ) );
     mgr->SetConditions( SCH_ACTIONS::showDesignBlockPanel, CHECK( designBlockCond ) );
@@ -2943,6 +2950,18 @@ void SCH_EDIT_FRAME::ToggleSchematicHierarchy()
 
         m_auimgr.Update();
     }
+}
+
+
+void SCH_EDIT_FRAME::ToggleSpecPane()
+{
+    wxAuiPaneInfo& spec_pane = m_auimgr.GetPane( wxS( "SpecPane" ) );
+
+    if( !spec_pane.IsOk() )
+        return;
+
+    spec_pane.Show( !spec_pane.IsShown() );
+    m_auimgr.Update();
 }
 
 

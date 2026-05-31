@@ -1495,6 +1495,13 @@ TOOL_ACTION SCH_ACTIONS::showHierarchy( TOOL_ACTION_ARGS()
         .ToolbarState( TOOLBAR_STATE::TOGGLE )
         .Icon( BITMAPS::hierarchy_nav ) );
 
+TOOL_ACTION SCH_ACTIONS::showSpecPane( TOOL_ACTION_ARGS()
+        .Name( "eeschema.EditorTool.showSpecPane" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Spec Pane" ) )
+        .Tooltip( _( "Show/hide the klicad-python spec pane" ) )
+        .ToolbarState( TOOLBAR_STATE::TOGGLE ) );
+
 
 // SCH_LINE_WIRE_BUS_TOOL
 //

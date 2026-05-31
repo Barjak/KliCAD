@@ -851,6 +851,11 @@ public:
     void ToggleSchematicHierarchy();
 
     /**
+     * Toggle the show/hide state of the klicad-python spec pane.
+     */
+    void ToggleSpecPane();
+
+    /**
      * Toggle the show/hide state of Search pane
      */
     void ToggleSearch();

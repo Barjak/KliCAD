@@ -131,6 +131,7 @@ public:
 
     int ShowSearch( const TOOL_EVENT& aEvent );
     int ShowHierarchy( const TOOL_EVENT& aEvent );
+    int ShowSpecPane( const TOOL_EVENT& aEvent );
     int ShowNetNavigator( const TOOL_EVENT& aEvent );
     int ToggleProperties( const TOOL_EVENT& aEvent );
     int ToggleLibraryTree( const TOOL_EVENT& aEvent );
