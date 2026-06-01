@@ -120,8 +120,19 @@ py::dict auto_layout_run( const std::string& aSchPath, py::list aNets )
 		// renders the pre-OGDF schematic the to_schematic emit
 		// produced.  The PNG looks "wrong" because the file on disk
 		// IS the pre-OGDF state.  See audit dated 2026-05-31.
+		//
+		// Also CRITICAL: SCH_SYMBOL::SetPosition / SCH_SHEET::Move /
+		// raw SCH_SCREEN::Append+Remove update the model but never
+		// notify KIGFX::VIEW.  The canvas keeps drawing the stale
+		// cached geometry — the GUI shows the pre-OGDF layout even
+		// though the model and (after the dirty fix) the file both
+		// hold the post-OGDF positions.  Screenshots of the canvas
+		// therefore *do* capture what's drawn — they capture the
+		// stale paint.  HardRedraw() rebuilds the canvas view items
+		// from the live screen, syncing canvas to model.
 		screen->SetContentModified();
 		frame->OnModify();
+		frame->HardRedraw();
 		try
 		{
 			frame->SaveProject( /*aSaveAs*/ false );
