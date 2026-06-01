@@ -13,20 +13,25 @@
 
 #include <sch_screen.h>
 #include <sch_symbol.h>
+#include <sch_field.h>
 #include <sch_line.h>
 #include <sch_pin.h>
 #include <lib_symbol.h>
 #include <pin_type.h>
 #include <layer_ids.h>
+#include <template_fieldnames.h>
 #include <core/typeinfo.h>
 
 #include <ogdf/basic/geometry.h>
+#include <ogdf/layered/FastHierarchyLayout.h>
 #include <ogdf/layered/SugiyamaLayout.h>
 #include <ogdf/portconstraints/PortBarycenterHeuristic.h>
 #include <ogdf/portconstraints/OrthoPortRouter.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <limits>
 #include <vector>
 
 namespace klicad::auto_layout {
@@ -87,10 +92,18 @@ void SchOgdfAdapter::buildNodes()
 		m_nodeToSymbol[n]   = sym;
 
 		// Reference designator → SCH_SYMBOL* index for the spec-
-		// driven edge builder.  Sheet path 0 == top-level; M2
-		// hierarchy work will need to thread the right path here.
-		const wxString ref = sym->GetRef( nullptr, false );
-		m_refToSymbol[ ref.ToStdString() ] = sym;
+		// driven edge builder.  Read the REFERENCE field directly
+		// rather than calling SCH_SYMBOL::GetRef(nullptr) — that
+		// path goes through SCH_SHEET_PATH::Path() which derefs
+		// an empty SCH_SHEET_INSTANCE vector and SEGVs in the
+		// API-thread context where no current sheet path is set.
+		// M2 hierarchy work will revisit this with proper sheet
+		// path threading.
+		std::string refStr;
+		if( SCH_FIELD* refField = sym->GetField( FIELD_T::REFERENCE ) )
+			refStr = refField->GetText().ToStdString();
+		if( !refStr.empty() )
+			m_refToSymbol[ refStr ] = sym;
 
 		const std::unique_ptr<LIB_SYMBOL>& libSym = sym->GetLibSymbolRef();
 		if( libSym )
@@ -128,10 +141,17 @@ void SchOgdfAdapter::buildPorts()
 			const double   anchorX = static_cast<double>( pinPos.x ) - nodeX;
 			const double   anchorY = static_cast<double>( pinPos.y ) - nodeY;
 
-			const int portIdx = m_PGA.addPort( n, side, anchorX, anchorY );
+			// NOTE: addPort returns a GLOBAL port id (m_nextPortId++);
+			// setEdgePortsByIndex consumes a PER-NODE vector index
+			// (m_ports[v][idx]).  Capture the per-node index here so
+			// buildEdgesFromSpec's lookups feed the right value to
+			// setEdgePortsByIndex.
+			m_PGA.addPort( n, side, anchorX, anchorY );
+			const int portLocalIdx =
+				static_cast<int>( m_PGA.ports( n ).size() ) - 1;
 
 			const std::string pinNum = pin->GetNumber().ToStdString();
-			m_nodePinToPort[ { n, pinNum } ] = portIdx;
+			m_nodePinToPort[ { n, pinNum } ] = portLocalIdx;
 		}
 	}
 }
@@ -141,6 +161,10 @@ int SchOgdfAdapter::buildEdgesFromSpec( const std::vector<NetSpec>& aNets )
 {
 	int edgeCount = 0;
 
+	// Diagnostic: warn for every net we drop because we couldn't map
+	// either the ref or the pin — saves a debug cycle when the layout
+	// silently produces zero wires.  Goes to stderr via wxLog at TRACE
+	// level so it shows up in the ASan log only.
 	for( const NetSpec& net : aNets )
 	{
 		if( net.pins.size() < 2 )
@@ -157,12 +181,22 @@ int SchOgdfAdapter::buildEdgesFromSpec( const std::vector<NetSpec>& aNets )
 		{
 			auto symIt = m_refToSymbol.find( ref );
 			if( symIt == m_refToSymbol.end() )
+			{
+				std::fprintf( stderr,
+					"[ogdf_adapter] net %s: ref %s not in m_refToSymbol\n",
+					net.net_name.c_str(), ref.c_str() );
 				continue;
+			}
 
 			ogdf::node n = m_symbolToNode[ symIt->second ];
 			auto portIt = m_nodePinToPort.find( { n, pinNum } );
 			if( portIt == m_nodePinToPort.end() )
+			{
+				std::fprintf( stderr,
+					"[ogdf_adapter] net %s: ref %s pin %s not in m_nodePinToPort\n",
+					net.net_name.c_str(), ref.c_str(), pinNum.c_str() );
 				continue;
+			}
 
 			endpoints.push_back( { n, portIt->second } );
 		}
@@ -183,6 +217,9 @@ int SchOgdfAdapter::buildEdgesFromSpec( const std::vector<NetSpec>& aNets )
 		}
 	}
 
+	std::fprintf( stderr,
+		"[ogdf_adapter] buildEdgesFromSpec: %d edges from %zu nets\n",
+		edgeCount, aNets.size() );
 	return edgeCount;
 }
 
@@ -203,8 +240,19 @@ void SchOgdfAdapter::runLayout()
 	auto* heur = new ogdf::PortBarycenterHeuristic();
 	heur->setPortGraphAttributes( &m_PGA );
 
+	// Spacing in KiCad eeschema internal units.  SCH_IU_PER_MM = 1e4
+	// (see include/base_units.h:74 — "Schematic internal units 1=100nm")
+	// so 1 KiCad grid (2.54 mm) = 25,400 IU.  Without setting these
+	// the FastHierarchyLayout defaults are tiny (~50 IU = 5 µm) and
+	// the output piles up at the top-left page corner.
+	const double GRID_IU = 25400.0;
+	auto* hLayout = new ogdf::FastHierarchyLayout();
+	hLayout->nodeDistance( 4.0 * GRID_IU );
+	hLayout->layerDistance( 8.0 * GRID_IU );
+
 	ogdf::SugiyamaLayout SL;
 	SL.setCrossMin( heur );
+	SL.setLayout( hLayout );
 
 	try
 	{
@@ -216,28 +264,31 @@ void SchOgdfAdapter::runLayout()
 		return;
 	}
 
-	// Stage B — derive layers from x-coordinates post-Sugiyama so we
-	// can route between adjacent layer pairs.  SugiyamaLayout
-	// produces left-to-right placement; nodes within a layer share
-	// (approximately) the same x.  Group by a tolerance that's a
-	// fraction of the expected inter-layer spacing.
-	std::vector<std::pair<double, ogdf::node>> byX;
-	byX.reserve( m_graph.numberOfNodes() );
+	// Stage B — derive layers from y-coordinates post-Sugiyama.
+	// SugiyamaLayout's default orientation is top-down: ranks go
+	// in Y, not X.  So nodes within a layer share approximately
+	// the same y (one layer per rank), and adjacent layers are
+	// distinct y-bands.  Group by a tolerance that's a fraction
+	// of the expected inter-layer y-gap.  (The earlier x-based
+	// version put cross-rank-connected nodes like R1→R2 in the
+	// SAME layer because they were both at the same x — and the
+	// router never saw the edge as cross-layer.  See
+	// research/c5-adapter-design.md for the diagnosis.)
+	std::vector<std::pair<double, ogdf::node>> byY;
+	byY.reserve( m_graph.numberOfNodes() );
 	for( ogdf::node n : m_graph.nodes )
-		byX.emplace_back( m_GA.x( n ), n );
+		byY.emplace_back( m_GA.y( n ), n );
 
-	std::sort( byX.begin(), byX.end(),
+	std::sort( byY.begin(), byY.end(),
 	           []( const auto& a, const auto& b ) { return a.first < b.first; } );
 
-	// Tolerance: 1/4 of the median inter-x gap if the graph has
-	// multiple layers, otherwise infinity (single-layer case).
 	double tolerance = 0.0;
-	if( byX.size() >= 2 )
+	if( byY.size() >= 2 )
 	{
 		std::vector<double> gaps;
-		for( size_t i = 1; i < byX.size(); ++i )
+		for( size_t i = 1; i < byY.size(); ++i )
 		{
-			const double g = byX[i].first - byX[i - 1].first;
+			const double g = byY[i].first - byY[i - 1].first;
 			if( g > 0.0 )
 				gaps.push_back( g );
 		}
@@ -249,23 +300,74 @@ void SchOgdfAdapter::runLayout()
 	}
 
 	std::vector<std::vector<ogdf::node>> layers;
-	double lastX = -1e30;
-	for( const auto& [x, n] : byX )
+	double lastY = -1e30;
+	for( const auto& [y, n] : byY )
 	{
-		if( layers.empty() || x - lastX > tolerance )
+		if( layers.empty() || y - lastY > tolerance )
 			layers.emplace_back();
 		layers.back().push_back( n );
-		lastX = x;
+		lastY = y;
+	}
+
+	std::fprintf( stderr,
+		"[ogdf_adapter] runLayout: derived %zu layers from y-coords\n",
+		layers.size() );
+
+	// Diagnostic: dump raw OGDF coords + node width/height so we can
+	// tell whether tight clusters come from OGDF ignoring nodeDistance
+	// or from a missing per-node bbox.
+	for( ogdf::node nn : m_graph.nodes )
+	{
+		const char* ref = "?";
+		auto it = m_nodeToSymbol.find( nn );
+		if( it != m_nodeToSymbol.end() )
+		{
+			if( SCH_FIELD* f = it->second->GetField( FIELD_T::REFERENCE ) )
+				ref = f->GetText().c_str();
+		}
+		std::fprintf( stderr,
+			"[ogdf_adapter]   node %s  x=%.0f  y=%.0f  w=%.0f  h=%.0f\n",
+			ref, m_GA.x( nn ), m_GA.y( nn ), m_GA.width( nn ), m_GA.height( nn ) );
 	}
 
 	// Stage C — port-aware orthogonal routing between adjacent layers.
-	// Channel spacing: one KiCad grid unit (2.54 mm = 2540000 nm).
-	const double GRID_NM = 2540000.0;
-	ogdf::OrthoPortRouter router( m_PGA, /*edgeSpacing=*/GRID_NM );
+	// Channel spacing: one KiCad grid unit (GRID_IU was defined above).
+	ogdf::OrthoPortRouter router( m_PGA, /*edgeSpacing=*/GRID_IU );
 
 	for( size_t i = 0; i + 1 < layers.size(); ++i )
 	{
 		router.routeBetween( layers[i], layers[i + 1] );
+	}
+
+	// Stage D — translate the entire layout so its bounding box upper-
+	// left lands at (40 mm, 40 mm) on the KiCad page.  SugiyamaLayout
+	// outputs in its own coordinate frame anchored at (0, 0); without
+	// this translation, layouts with negative y end up above the page
+	// top.  Also offset edge bend points so wires (if any) stay
+	// aligned with their port endpoints.
+	double minX = std::numeric_limits<double>::infinity();
+	double minY = std::numeric_limits<double>::infinity();
+	for( ogdf::node nn : m_graph.nodes )
+	{
+		minX = std::min( minX, m_GA.x( nn ) );
+		minY = std::min( minY, m_GA.y( nn ) );
+	}
+	const double TARGET_IU = 40.0 * 10000.0;  // 40 mm in eeschema IU
+	const double offX = TARGET_IU - minX;
+	const double offY = TARGET_IU - minY;
+	for( ogdf::node nn : m_graph.nodes )
+	{
+		m_GA.x( nn ) += offX;
+		m_GA.y( nn ) += offY;
+	}
+	for( ogdf::edge e : m_graph.edges )
+	{
+		ogdf::DPolyline& bends = m_GA.bends( e );
+		for( auto& p : bends )
+		{
+			p.m_x += offX;
+			p.m_y += offY;
+		}
 	}
 }
 
@@ -274,15 +376,81 @@ LayoutReport SchOgdfAdapter::writeBackToScreen()
 {
 	LayoutReport report;
 
-	// Stage A — symbol positions.  Round to the nearest integer (KiCad
-	// stores positions in internal nanometer-grid integer units).
+	// Stage A — symbol positions.  Snapshot old (symbol, pin) positions
+	// BEFORE moving anything so we can translate per-pin net labels by
+	// the same delta in Stage A.1.
+	//
+	// The existing to_schematic pipeline emits a net label adjacent to
+	// every pin (the "default pins-to-netlabels path").  When we move a
+	// symbol, those labels stay at their original pin positions and
+	// orphan visually unless we drag them along.
+	struct OldPlacement
+	{
+		SCH_SYMBOL*           sym;
+		VECTOR2I              oldSymPos;
+		VECTOR2I              newSymPos;
+		std::vector<VECTOR2I> oldPinPositions;
+	};
+	std::vector<OldPlacement> oldPlacements;
+	oldPlacements.reserve( m_symbolToNode.size() );
+
 	for( auto& [sym, n] : m_symbolToNode )
 	{
-		const VECTOR2I newPos( static_cast<int>( std::lround( m_GA.x( n ) ) ),
-		                       static_cast<int>( std::lround( m_GA.y( n ) ) ) );
-		sym->SetPosition( newPos );
+		OldPlacement op;
+		op.sym       = sym;
+		op.oldSymPos = sym->GetPosition();
+		op.newSymPos = VECTOR2I(
+			static_cast<int>( std::lround( m_GA.x( n ) ) ),
+			static_cast<int>( std::lround( m_GA.y( n ) ) ) );
+		for( SCH_PIN* pin : sym->GetPins() )
+			op.oldPinPositions.push_back( pin->GetPosition() );
+		oldPlacements.push_back( std::move( op ) );
+	}
+
+	for( OldPlacement& op : oldPlacements )
+	{
+		op.sym->SetPosition( op.newSymPos );
 		++report.symbols_placed;
 	}
+
+	// Stage A.1 — translate every label that sits on (or very near) one
+	// of the snapshotted OLD pin positions by that symbol's move delta.
+	// Tolerance: 1 grid unit (2.54 mm).  Covers SCH_LABEL, SCH_GLOBAL_LABEL,
+	// SCH_HIER_LABEL, and SCH_DIRECTIVE_LABEL all in one loop.
+	const int LABEL_PIN_TOL = 25400;  // 2.54 mm in eeschema IU
+
+	auto translate_labels_of_type = [&]( KICAD_T aType )
+	{
+		std::vector<SCH_ITEM*> toMove;
+		for( SCH_ITEM* item : m_screen.Items().OfType( aType ) )
+			toMove.push_back( item );
+
+		for( SCH_ITEM* item : toMove )
+		{
+			const VECTOR2I labelPos = item->GetPosition();
+			for( const OldPlacement& op : oldPlacements )
+			{
+				bool matched = false;
+				for( const VECTOR2I& oldPin : op.oldPinPositions )
+				{
+					if( std::abs( labelPos.x - oldPin.x ) <= LABEL_PIN_TOL
+					 && std::abs( labelPos.y - oldPin.y ) <= LABEL_PIN_TOL )
+					{
+						const VECTOR2I delta = op.newSymPos - op.oldSymPos;
+						item->SetPosition( labelPos + delta );
+						matched = true;
+						break;
+					}
+				}
+				if( matched )
+					break;
+			}
+		}
+	};
+	translate_labels_of_type( SCH_LABEL_T );
+	translate_labels_of_type( SCH_GLOBAL_LABEL_T );
+	translate_labels_of_type( SCH_HIER_LABEL_T );
+	translate_labels_of_type( SCH_DIRECTIVE_LABEL_T );
 
 	// Stage B — clear any pre-existing wires (we replaced them with
 	// our routing) then emit fresh SCH_LINE items from the bend lists.
