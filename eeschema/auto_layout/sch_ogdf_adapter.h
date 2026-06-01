@@ -23,6 +23,7 @@
 #pragma once
 
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -149,6 +150,13 @@ private:
 	std::map<ogdf::node,  SCH_SHEET*>           m_nodeToSheet;
 	std::map<std::string, ogdf::node>           m_refToNode;
 	std::map<std::pair<ogdf::node, std::string>, int> m_nodePinToPort;
+
+	// Power-driven nets discovered by buildEdgesFromSpec's augmentation
+	// pass.  Used by writeBackToScreen to remove redundant SCH_LABEL
+	// items at consumer-pin positions — when a power symbol provides
+	// the net name visually, the duplicate pin label overlaps with the
+	// pin number / wire and is visual clutter.
+	std::set<std::string> m_powerDrivenNets;
 
 	// --- buildFromScreen substeps ---
 

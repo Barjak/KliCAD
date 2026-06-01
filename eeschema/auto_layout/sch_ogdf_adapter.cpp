@@ -15,6 +15,7 @@
 #include <sch_symbol.h>
 #include <sch_sheet.h>
 #include <sch_sheet_pin.h>
+#include <sch_label.h>
 #include <sch_field.h>
 #include <sch_line.h>
 #include <sch_pin.h>
@@ -286,6 +287,7 @@ int SchOgdfAdapter::buildEdgesFromSpec( const std::vector<NetSpec>& aNets )
 		else
 			it->second->insert( it->second->begin(),
 			                    std::make_pair( ref, std::string( "1" ) ) );
+		m_powerDrivenNets.insert( netName );
 		++augmented;
 	}
 
@@ -659,6 +661,55 @@ LayoutReport SchOgdfAdapter::writeBackToScreen()
 
 			prev = curr;
 		}
+	}
+
+	// Stage E — remove redundant pin-labels.  For every net in
+	// m_powerDrivenNets (nets that picked up a power symbol during
+	// buildEdgesFromSpec augmentation), the to_schematic emit also
+	// dropped a black SCH_LABEL with the same net name at every
+	// consumer pin.  Once the OGDF router has wired the consumer to
+	// the power symbol, both the wire AND the power symbol's text
+	// declare the same net — the duplicate label crowds the pin
+	// number and the resistor body without adding any information.
+	// Delete it.
+	if( !m_powerDrivenNets.empty() )
+	{
+		std::vector<SCH_ITEM*> labelsToRemove;
+		for( SCH_ITEM* item : m_screen.Items().OfType( SCH_LABEL_T ) )
+		{
+			SCH_LABEL_BASE* label = static_cast<SCH_LABEL_BASE*>( item );
+			const std::string text = label->GetText().ToStdString();
+			if( m_powerDrivenNets.count( text ) == 0 )
+				continue;
+
+			// Only delete labels that sit on a symbol PIN — those are
+			// the redundant pin-labels the harness emitted.  Stand-
+			// alone labels (e.g. for nets without a power symbol) stay.
+			const VECTOR2I labelPos = label->GetPosition();
+			bool onPin = false;
+			for( auto& [sym, n] : m_symbolToNode )
+			{
+				for( SCH_PIN* pin : sym->GetPins() )
+				{
+					if( pin->GetPosition() == labelPos )
+					{
+						onPin = true;
+						break;
+					}
+				}
+				if( onPin )
+					break;
+			}
+			if( onPin )
+				labelsToRemove.push_back( item );
+		}
+
+		std::fprintf( stderr,
+			"[ogdf_adapter] writeBack: removing %zu redundant pin-labels"
+			" for power-driven nets\n", labelsToRemove.size() );
+
+		for( SCH_ITEM* l : labelsToRemove )
+			m_screen.Remove( l );
 	}
 
 	report.ok = true;

@@ -18,10 +18,12 @@
 #include <pybind11/embed.h>
 #include <pybind11/stl.h>
 
-#include <eeschema_helpers.h>
-#include <io/io_mgr.h>
-#include <sch_io/sch_io.h>
-#include <sch_io/sch_io_mgr.h>
+#include <wx/window.h>
+#include <wx/toplevel.h>
+
+#include <eda_base_frame.h>
+#include <frame_type.h>
+#include <sch_edit_frame.h>
 #include <sch_screen.h>
 #include <sch_sheet.h>
 #include <schematic.h>
@@ -31,6 +33,25 @@
 namespace py = pybind11;
 
 namespace {
+
+// Walk wxTopLevelWindows for the SCH_EDIT_FRAME and return the live
+// SCHEMATIC + RootScreen — the same pattern bindings_schematic_state.cpp
+// uses.  Avoids re-LoadSchematic'ing an already-open project, which
+// produces a second SCHEMATIC instance and is what the API-thread
+// HandleUnsavedChanges path was hanging on.
+SCH_EDIT_FRAME* find_sch_edit_frame_for_auto_layout()
+{
+	for( wxWindow* w : wxTopLevelWindows )
+	{
+		EDA_BASE_FRAME* base = dynamic_cast<EDA_BASE_FRAME*>( w );
+		if( !base )
+			continue;
+		if( base->GetFrameType() == FRAME_SCH )
+			return static_cast<SCH_EDIT_FRAME*>( base );
+	}
+	return nullptr;
+}
+
 
 py::dict auto_layout_run( const std::string& aSchPath, py::list aNets )
 {
@@ -57,18 +78,22 @@ py::dict auto_layout_run( const std::string& aSchPath, py::list aNets )
 		nets.push_back( std::move( spec ) );
 	}
 
-	// Open the schematic — matching the convention used by JobSchErc
-	// and other CLI-style operations.
-	SCHEMATIC* sch = EESCHEMA_HELPERS::LoadSchematic( aSchPath, true, false );
-	if( sch == nullptr )
+	// Operate on the currently-open SCHEMATIC, NOT re-LoadSchematic'd —
+	// the caller is expected to have run pm.load_project on aSchPath
+	// already, so the live SCH_EDIT_FRAME holds the canonical instance.
+	// Re-LoadSchematic'ing produces a second SCHEMATIC instance whose
+	// API-thread HandleUnsavedChanges path hangs.
+	SCH_EDIT_FRAME* frame = find_sch_edit_frame_for_auto_layout();
+	if( frame == nullptr )
 	{
 		py::dict err;
 		err[ "ok" ]    = false;
-		err[ "error" ] = std::string( "failed to load schematic at " ) + aSchPath;
+		err[ "error" ] = std::string( "no SCH_EDIT_FRAME found (call pm.load_project first)" );
 		return err;
 	}
 
-	SCH_SCREEN* screen = sch->RootScreen();
+	SCHEMATIC& sch = frame->Schematic();
+	SCH_SCREEN* screen = sch.RootScreen();
 	if( screen == nullptr )
 	{
 		py::dict err;
@@ -80,14 +105,26 @@ py::dict auto_layout_run( const std::string& aSchPath, py::list aNets )
 	klicad::auto_layout::LayoutReport report =
 		klicad::auto_layout::runAutoLayout( *screen, nets );
 
-	// Save the modified schematic back to disk via the SCH_KICAD IO
-	// plugin — the standard JobSchPlot save pattern.
+	// Save via SCH_EDIT_FRAME::SaveProject — mirrors how
+	// bindings_schematic_state's save_schematic binding works.
+	// Direct-IO SaveSchematicFile bypasses the live frame's state
+	// and writes a stale snapshot (the schematic loaded from disk
+	// before our modifications), producing a blank-page result.
 	if( report.ok )
 	{
+		// CRITICAL: writeBackToScreen mutates the screen via raw
+		// SetPosition / Move / Append / Remove — none of which set
+		// the modified flag.  Without an explicit dirty mark
+		// SaveProject's IsContentModified() check at files-io.cpp:1264
+		// short-circuits to a silent no-op, and kicad-cli later
+		// renders the pre-OGDF schematic the to_schematic emit
+		// produced.  The PNG looks "wrong" because the file on disk
+		// IS the pre-OGDF state.  See audit dated 2026-05-31.
+		screen->SetContentModified();
+		frame->OnModify();
 		try
 		{
-			IO_RELEASER<SCH_IO> pi( SCH_IO_MGR::FindPlugin( SCH_IO_MGR::SCH_KICAD ) );
-			pi->SaveSchematicFile( aSchPath, &sch->Root(), sch );
+			frame->SaveProject( /*aSaveAs*/ false );
 		}
 		catch( const std::exception& )
 		{
