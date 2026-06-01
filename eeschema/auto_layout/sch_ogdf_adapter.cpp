@@ -63,6 +63,24 @@ ogdf::PortSide pinOrientationToSide( PIN_ORIENTATION aOri )
 	}
 }
 
+// KiCad eeschema's default schematic grid is 50 mils = 1.27 mm =
+// 12700 IU.  KiCad's connectivity engine requires pin endpoints and
+// wire endpoints to coincide EXACTLY — sub-grid placement (which
+// Sugiyama happily produces) results in pin_not_connected and
+// power_pin_not_driven ERC errors even when the wires visually touch
+// the pins.  Round everything we write back to the schematic to this
+// grid so connectivity holds.
+constexpr int SCH_GRID_IU = 12700;
+inline int snapToGrid( double v )
+{
+	const double g = static_cast<double>( SCH_GRID_IU );
+	return static_cast<int>( std::lround( v / g ) ) * SCH_GRID_IU;
+}
+inline VECTOR2I snapToGrid( double x, double y )
+{
+	return VECTOR2I( snapToGrid( x ), snapToGrid( y ) );
+}
+
 }  // anonymous namespace
 
 
@@ -334,6 +352,13 @@ int SchOgdfAdapter::buildEdgesFromSpec( const std::vector<NetSpec>& aNets )
 		if( endpoints.size() < 2 )
 			continue;
 
+		// Record this net for Stage E label dedup.  Power-driven nets
+		// stay in m_powerDrivenNets (remove all pin-labels); non-power
+		// nets we emit edges for go in m_wiredSignalNets (keep one
+		// label, remove the rest).
+		if( m_powerDrivenNets.count( net.net_name ) == 0 )
+			m_wiredSignalNets.insert( net.net_name );
+
 		// Star pattern: connect every endpoint to the anchor.
 		//
 		// Sugiyama puts edge.source above edge.target.  For a net with
@@ -502,14 +527,25 @@ void SchOgdfAdapter::runLayout()
 			ref, m_GA.x( nn ), m_GA.y( nn ), m_GA.width( nn ), m_GA.height( nn ) );
 	}
 
-	// Stage C — port-aware orthogonal routing between adjacent layers.
-	// Channel spacing: one KiCad grid unit (GRID_IU was defined above).
+	// Stage C — port-aware orthogonal routing.
+	//
+	// Channel spacing: one KiCad grid unit.
+	//
+	// Originally we called routeBetween once per consecutive layer
+	// pair, but edges spanning more than two layers (e.g. RE.2 → GND
+	// when RE is layer 1 and PWR_GND is layer 3) get FILTERED out by
+	// buildHyperEdges' target-in-layer check, leaving those pins
+	// unrouted.  Instead, pass ALL nodes as both source-layer and
+	// target-layer to one global routeBetween call — buildHyperEdges
+	// considers every adjEntry, and the targets-set membership check
+	// passes for every edge so nothing is skipped.  emitBends still
+	// uses the global midX between source/target node bounding boxes.
 	ogdf::OrthoPortRouter router( m_PGA, /*edgeSpacing=*/GRID_IU );
-
-	for( size_t i = 0; i + 1 < layers.size(); ++i )
-	{
-		router.routeBetween( layers[i], layers[i + 1] );
-	}
+	std::vector<ogdf::node> allNodes;
+	allNodes.reserve( m_graph.numberOfNodes() );
+	for( ogdf::node nn : m_graph.nodes )
+		allNodes.push_back( nn );
+	router.routeBetween( allNodes, allNodes );
 
 	// Stage D — translate the entire layout so its bounding box upper-
 	// left lands at (40 mm, 40 mm) on the KiCad page.  SugiyamaLayout
@@ -571,9 +607,7 @@ LayoutReport SchOgdfAdapter::writeBackToScreen()
 		OldPlacement op;
 		op.sym       = sym;
 		op.oldSymPos = sym->GetPosition();
-		op.newSymPos = VECTOR2I(
-			static_cast<int>( std::lround( m_GA.x( n ) ) ),
-			static_cast<int>( std::lround( m_GA.y( n ) ) ) );
+		op.newSymPos = snapToGrid( m_GA.x( n ), m_GA.y( n ) );
 		for( SCH_PIN* pin : sym->GetPins() )
 			op.oldPinPositions.push_back( pin->GetPosition() );
 		oldPlacements.push_back( std::move( op ) );
@@ -594,9 +628,7 @@ LayoutReport SchOgdfAdapter::writeBackToScreen()
 		OldPlacement op;
 		op.sym       = nullptr;  // sentinel: sheet, not symbol
 		op.oldSymPos = sheet->GetPosition();
-		op.newSymPos = VECTOR2I(
-			static_cast<int>( std::lround( m_GA.x( n ) ) ),
-			static_cast<int>( std::lround( m_GA.y( n ) ) ) );
+		op.newSymPos = snapToGrid( m_GA.x( n ), m_GA.y( n ) );
 		for( SCH_SHEET_PIN* p : sheet->GetPins() )
 			op.oldPinPositions.push_back( p->GetPosition() );
 		oldPlacements.push_back( std::move( op ) );
@@ -658,6 +690,15 @@ LayoutReport SchOgdfAdapter::writeBackToScreen()
 	for( SCH_ITEM* w : wiresToRemove )
 		m_screen.Remove( w );
 
+	// Collect raw orthogonal segments from every routed edge.  Then
+	// coalesce: drop exact duplicates and merge collinear overlapping
+	// runs into single SCH_LINEs.  Star-pattern emission produces many
+	// redundant segments — each edge of a multi-fanout net traces the
+	// same path away from the shared port — and without coalescing the
+	// canvas shows parallel duplicate wires that look like a bus.
+	struct Seg { VECTOR2I a, b; };  // a < b normalized after collection
+	std::vector<Seg> rawSegs;
+
 	for( ogdf::edge e : m_graph.edges )
 	{
 		const ogdf::DPolyline& bends = m_GA.bends( e );
@@ -672,32 +713,214 @@ LayoutReport SchOgdfAdapter::writeBackToScreen()
 			const ogdf::DPoint curr = *it;
 			++it;
 
-			const VECTOR2I a( static_cast<int>( std::lround( prev.m_x ) ),
-			                  static_cast<int>( std::lround( prev.m_y ) ) );
-			const VECTOR2I b( static_cast<int>( std::lround( curr.m_x ) ),
-			                  static_cast<int>( std::lround( curr.m_y ) ) );
-
-			// Skip degenerate zero-length segments — happen at edge
-			// endpoints where the bend coincides with the port anchor.
-			if( a == b )
-			{
-				prev = curr;
-				continue;
-			}
-
-			SCH_LINE* line = new SCH_LINE( a, LAYER_WIRE );
-			line->SetEndPoint( b );
-			m_screen.Append( line );
-			++report.wires_emitted;
-			++report.bends;
-
-			const double dx = curr.m_x - prev.m_x;
-			const double dy = curr.m_y - prev.m_y;
-			report.total_wirelength += std::sqrt( dx * dx + dy * dy );
+			const VECTOR2I a = snapToGrid( prev.m_x, prev.m_y );
+			const VECTOR2I b = snapToGrid( curr.m_x, curr.m_y );
 
 			prev = curr;
+
+			// Skip degenerate.
+			if( a == b )
+				continue;
+
+			rawSegs.push_back( { a, b } );
 		}
 	}
+
+	// Normalize each segment to (lo, hi) so duplicate detection works
+	// regardless of edge traversal direction.
+	auto less = []( const VECTOR2I& p, const VECTOR2I& q ) {
+		return p.x != q.x ? p.x < q.x : p.y < q.y;
+	};
+	for( Seg& s : rawSegs )
+		if( less( s.b, s.a ) )
+			std::swap( s.a, s.b );
+
+	// Bucket segments by (orientation, fixed_coord).  Horizontal: y is
+	// fixed.  Vertical: x is fixed.  Diagonal segments (shouldn't exist
+	// from OrthoPortRouter but defend) get their own bucket per segment.
+	std::map<std::pair<char,int>, std::vector<Seg>> buckets;
+	for( const Seg& s : rawSegs )
+	{
+		if( s.a.y == s.b.y )
+			buckets[ { 'H', s.a.y } ].push_back( s );
+		else if( s.a.x == s.b.x )
+			buckets[ { 'V', s.a.x } ].push_back( s );
+		else
+			buckets[ { 'D', static_cast<int>( rawSegs.size() ) + s.a.x } ].push_back( s );
+	}
+
+	std::vector<Seg> mergedSegs;
+	for( auto& [key, group] : buckets )
+	{
+		const char orient = key.first;
+		if( orient == 'D' )
+		{
+			for( const Seg& s : group )
+				mergedSegs.push_back( s );
+			continue;
+		}
+
+		auto axisLo = orient == 'H'
+			? []( const Seg& s ) { return s.a.x; }
+			: []( const Seg& s ) { return s.a.y; };
+		auto axisHi = orient == 'H'
+			? []( const Seg& s ) { return s.b.x; }
+			: []( const Seg& s ) { return s.b.y; };
+
+		std::sort( group.begin(), group.end(),
+		           [&]( const Seg& p, const Seg& q ) {
+			           return axisLo( p ) != axisLo( q )
+			                  ? axisLo( p ) < axisLo( q )
+			                  : axisHi( p ) < axisHi( q );
+		           } );
+
+		Seg current = group.front();
+		for( size_t i = 1; i < group.size(); ++i )
+		{
+			const Seg& s = group[i];
+			if( axisLo( s ) <= axisHi( current ) )
+			{
+				// Overlapping or touching: extend.
+				if( orient == 'H' )
+					current.b.x = std::max( current.b.x, s.b.x );
+				else
+					current.b.y = std::max( current.b.y, s.b.y );
+			}
+			else
+			{
+				mergedSegs.push_back( current );
+				current = s;
+			}
+		}
+		mergedSegs.push_back( current );
+	}
+
+	// Snap segment endpoints that land "near" a real pin to that pin's
+	// exact position.  OGDF's OrthoPortRouter outputs route points that
+	// don't always coincide with the port anchor — combined with our
+	// independent grid snap, segment endpoints can land one grid step
+	// off the pin.  KiCad's connectivity engine then ignores the wire,
+	// producing pin_not_connected ERC errors.  Build a position →
+	// pin index, then for each segment endpoint within SNAP_TOL of a
+	// pin, replace with the exact pin position.
+	std::vector<VECTOR2I> pinPosList;
+	for( auto& [sym, n] : m_symbolToNode )
+		for( SCH_PIN* pin : sym->GetPins() )
+			pinPosList.push_back( pin->GetPosition() );
+	for( auto& [sheet, n] : m_sheetToNode )
+		for( SCH_SHEET_PIN* p : sheet->GetPins() )
+			pinPosList.push_back( p->GetPosition() );
+
+	const int SNAP_TOL = 2 * SCH_GRID_IU;  // up to 2 grid steps
+	int snapsApplied = 0;
+	auto snapEnd = [&]( VECTOR2I p ) -> VECTOR2I {
+		VECTOR2I best = p; long long bestD = LLONG_MAX;
+		for( const VECTOR2I& pin : pinPosList )
+		{
+			const long long dx = std::abs( static_cast<long long>( pin.x ) - p.x );
+			const long long dy = std::abs( static_cast<long long>( pin.y ) - p.y );
+			if( dx > SNAP_TOL || dy > SNAP_TOL )
+				continue;
+			const long long d = dx + dy;
+			if( d > 0 && d < bestD )
+			{
+				bestD = d;
+				best = pin;
+			}
+		}
+		if( best != p )
+			++snapsApplied;
+		return best;
+	};
+	for( Seg& s : mergedSegs )
+	{
+		s.a = snapEnd( s.a );
+		s.b = snapEnd( s.b );
+	}
+	std::fprintf( stderr,
+		"[ogdf_adapter] writeBack: %zu pin-snap candidates, %d snaps applied\n",
+		pinPosList.size(), snapsApplied );
+
+	std::fprintf( stderr,
+		"[ogdf_adapter] writeBack: %zu raw segments → %zu merged\n",
+		rawSegs.size(), mergedSegs.size() );
+
+	for( const Seg& s : mergedSegs )
+	{
+		SCH_LINE* line = new SCH_LINE( s.a, LAYER_WIRE );
+		line->SetEndPoint( s.b );
+		m_screen.Append( line );
+		++report.wires_emitted;
+		++report.bends;
+		const double dx = s.b.x - s.a.x;
+		const double dy = s.b.y - s.a.y;
+		report.total_wirelength += std::sqrt( dx * dx + dy * dy );
+	}
+
+	// Pin-bridge pass: for each pin that's expected to be connected
+	// (any pin we built a port for), if no wire endpoint lands EXACTLY
+	// at the pin position, emit a short orthogonal stub from the pin
+	// to the nearest wire endpoint within FIX_TOL.  Catches the
+	// residual ERC pin_not_connected errors when OrthoPortRouter's
+	// channel-X lands a grid-step off the pin's x-column.
+	std::set<std::pair<int,int>> wireEnds;
+	for( const Seg& s : mergedSegs )
+	{
+		wireEnds.insert( { s.a.x, s.a.y } );
+		wireEnds.insert( { s.b.x, s.b.y } );
+	}
+
+	const int FIX_TOL = 4 * SCH_GRID_IU;
+	int bridgesAdded = 0;
+	for( const VECTOR2I& pinPos : pinPosList )
+	{
+		if( wireEnds.count( { pinPos.x, pinPos.y } ) > 0 )
+			continue;
+
+		// Find the closest wire endpoint within FIX_TOL.
+		VECTOR2I bestEnd;
+		long long bestD = LLONG_MAX;
+		for( const auto& [x, y] : wireEnds )
+		{
+			const long long dx = std::abs( static_cast<long long>( x ) - pinPos.x );
+			const long long dy = std::abs( static_cast<long long>( y ) - pinPos.y );
+			if( dx > FIX_TOL || dy > FIX_TOL )
+				continue;
+			const long long d = dx + dy;
+			if( d < bestD )
+			{
+				bestD = d;
+				bestEnd = VECTOR2I( x, y );
+			}
+		}
+		if( bestD == LLONG_MAX )
+			continue;
+
+		// Emit two orthogonal stubs going pin → corner → wire-endpoint
+		// so the bridge stays grid-aligned.  Pick the corner that
+		// minimizes total length: pin moves along pin-orientation
+		// preferred axis first.  Heuristic: go horizontally first
+		// (matches most resistor / cap layouts where pins are L/R or
+		// U/D and the trunk is a different axis).
+		const VECTOR2I corner( bestEnd.x, pinPos.y );
+		if( corner != pinPos )
+		{
+			SCH_LINE* l1 = new SCH_LINE( pinPos, LAYER_WIRE );
+			l1->SetEndPoint( corner );
+			m_screen.Append( l1 );
+			++report.wires_emitted;
+		}
+		if( corner != bestEnd )
+		{
+			SCH_LINE* l2 = new SCH_LINE( corner, LAYER_WIRE );
+			l2->SetEndPoint( bestEnd );
+			m_screen.Append( l2 );
+			++report.wires_emitted;
+		}
+		++bridgesAdded;
+	}
+	std::fprintf( stderr,
+		"[ogdf_adapter] writeBack: %d pin bridges added\n", bridgesAdded );
 
 	// Stage E — remove redundant pin-labels.  For every net in
 	// m_powerDrivenNets (nets that picked up a power symbol during
@@ -763,6 +986,62 @@ LayoutReport SchOgdfAdapter::writeBackToScreen()
 
 		for( SCH_ITEM* l : labelsToRemove )
 			m_screen.Remove( l );
+	}
+
+	// Stage E.2 — dedup wired SIGNAL nets.  Unlike power-driven nets,
+	// a signal net needs ONE label to give the wire group a name (else
+	// KiCad invents "Net-(Q1-Pad2)").  Keep the topmost-leftmost label
+	// per net, remove the rest.  Only labels at known consumer-pin
+	// positions are candidates — preserves user-placed labels elsewhere.
+	if( !m_wiredSignalNets.empty() )
+	{
+		// Build a quick lookup: pin position → bool (is a consumer pin).
+		std::set<std::pair<int,int>> pinPositions;
+		for( auto& [sym, n] : m_symbolToNode )
+			for( SCH_PIN* pin : sym->GetPins() )
+				pinPositions.insert( { pin->GetPosition().x,
+				                       pin->GetPosition().y } );
+		for( auto& [sheet, n] : m_sheetToNode )
+			for( SCH_SHEET_PIN* p : sheet->GetPins() )
+				pinPositions.insert( { p->GetPosition().x,
+				                       p->GetPosition().y } );
+
+		std::map<std::string, std::vector<SCH_ITEM*>> byNet;
+		for( SCH_ITEM* item : m_screen.Items().OfType( SCH_LABEL_T ) )
+		{
+			SCH_LABEL_BASE* label = static_cast<SCH_LABEL_BASE*>( item );
+			const std::string text = label->GetText().ToStdString();
+			if( m_wiredSignalNets.count( text ) == 0 )
+				continue;
+			const VECTOR2I p = label->GetPosition();
+			if( pinPositions.count( { p.x, p.y } ) == 0 )
+				continue;
+			byNet[ text ].push_back( item );
+		}
+
+		int dedup = 0;
+		for( auto& [name, items] : byNet )
+		{
+			if( items.size() < 2 )
+				continue;
+			// Keep the topmost-leftmost (min y, min x) for stable
+			// representative placement.
+			std::sort( items.begin(), items.end(),
+			           []( SCH_ITEM* a, SCH_ITEM* b ) {
+				           const VECTOR2I pa = a->GetPosition();
+				           const VECTOR2I pb = b->GetPosition();
+				           return pa.y != pb.y ? pa.y < pb.y : pa.x < pb.x;
+			           } );
+			for( size_t i = 1; i < items.size(); ++i )
+			{
+				m_screen.Remove( items[i] );
+				++dedup;
+			}
+		}
+
+		std::fprintf( stderr,
+			"[ogdf_adapter] writeBack: deduped %d redundant signal-net labels\n",
+			dedup );
 	}
 
 	report.ok = true;

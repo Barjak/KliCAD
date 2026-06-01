@@ -770,6 +770,17 @@ else()
     set( CMAKE_MACOSX_RPATH FALSE )
 endif()
 
+# Make the build-tree RUNPATH relocatable.  CMake's default bakes the
+# absolute build-dir directory of every link-line library into each
+# binary's RUNPATH; moving the build tree (or the whole source tree
+# with build/ inside) invalidates every binary at once.  $ORIGIN-
+# relative entries make the build tree movable wholesale.
+#
+# Available since CMake 3.14 (project requires ≥3.14 already).
+# See the 2026-05-31 build-dir-launch audit for the failure-mode
+# class this resolves.
+set( CMAKE_BUILD_RPATH_USE_ORIGIN ON )
+
 mark_as_advanced( KICAD_BIN
     KICAD_KIFACE
     KICAD_PLUGINS

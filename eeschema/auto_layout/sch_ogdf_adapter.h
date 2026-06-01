@@ -158,6 +158,13 @@ private:
 	// pin number / wire and is visual clutter.
 	std::set<std::string> m_powerDrivenNets;
 
+	// Signal nets the binding emitted wires for (i.e. nets with
+	// >= 2 consumer pins that didn't pick up a power symbol).  Stage E
+	// keeps the first label of each and removes the rest — the wire
+	// declares the connectivity, the duplicate pin-labels are visual
+	// noise.
+	std::set<std::string> m_wiredSignalNets;
+
 	// --- buildFromScreen substeps ---
 
 	/** Materialize one OGDF node per SCH_SYMBOL.  Reads body

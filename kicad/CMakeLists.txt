@@ -149,15 +149,31 @@ if( MSVC )
         )
 endif()
 
-if( UNIX )
-    # for build directory: create kiface symlinks so kicad (exe) can be run in-situ
-    add_custom_target( kiface_sym_links
-        COMMAND ${CMAKE_COMMAND} -E create_symlink "${CMAKE_BINARY_DIR}/eeschema/_eeschema.kiface" "${CMAKE_BINARY_DIR}/kicad/_eeschema.kiface"
-        COMMAND ${CMAKE_COMMAND} -E create_symlink "${CMAKE_BINARY_DIR}/pcbnew/_pcbnew.kiface" "${CMAKE_BINARY_DIR}/kicad/_pcbnew.kiface"
-        COMMAND ${CMAKE_COMMAND} -E create_symlink "${CMAKE_BINARY_DIR}/cvpcb/_cvpcb.kiface" "${CMAKE_BINARY_DIR}/kicad/_cvpcb.kiface"
-        COMMAND ${CMAKE_COMMAND} -E create_symlink "${CMAKE_BINARY_DIR}/gerbview/_gerbview.kiface" "${CMAKE_BINARY_DIR}/kicad/_gerbview.kiface"
-        COMMENT "Making <build-dir>/kicad/<kiface.symlinks>"
-        )
+# Build-tree launch: KICAD_RUN_FROM_BUILD_DIR=1 makes the kicad
+# launcher resolve kifaces via KIWAY::dso_search_path() (common/kiway.cpp),
+# which computes ${CMAKE_BINARY_DIR}/<kiface-subdir>/_<name>.kiface at
+# runtime — the exact default MODULE-output location each kiface lands
+# at.  No sibling symlinks in ${CMAKE_BINARY_DIR}/kicad/ are needed
+# (and the legacy kiface_sym_links target that lived here only
+# generated dangling links on partial rebuilds).
+#
+# The kicad target's dependency graph carries everything the launcher
+# touches at startup, so `make kicad` produces a runnable arrangement
+# without an out-of-band verify step.  See the 2026-05-31
+# build-dir-launch audit for the failure-mode classification this
+# replaces (`feedback_klicad_build_dir_assets.md` resolution).
+if( UNIX AND NOT APPLE )
+    add_dependencies( kicad
+        eeschema_kiface
+        pcbnew_kiface
+        cvpcb_kiface
+        gerbview_kiface
+        pl_editor_kiface
+        pcb_calculator_kiface
+        bitmap2component
+        api_schema_build_copy
+        bitmap_archive_build
+    )
 endif()
 
 if( APPLE )
