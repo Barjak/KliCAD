@@ -37,6 +37,7 @@
 // the full KliCAD headers.
 class SCH_SCREEN;
 class SCH_SYMBOL;
+class SCH_SHEET;
 class SCH_PIN;
 class LIB_SYMBOL;
 
@@ -144,7 +145,9 @@ private:
 	// Cross-reference indices.
 	std::map<SCH_SYMBOL*, ogdf::node>           m_symbolToNode;
 	std::map<ogdf::node, SCH_SYMBOL*>           m_nodeToSymbol;
-	std::map<std::string, SCH_SYMBOL*>          m_refToSymbol;
+	std::map<SCH_SHEET*,  ogdf::node>           m_sheetToNode;
+	std::map<ogdf::node,  SCH_SHEET*>           m_nodeToSheet;
+	std::map<std::string, ogdf::node>           m_refToNode;
 	std::map<std::pair<ogdf::node, std::string>, int> m_nodePinToPort;
 
 	// --- buildFromScreen substeps ---

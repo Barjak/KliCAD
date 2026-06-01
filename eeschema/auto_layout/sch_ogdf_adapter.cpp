@@ -13,6 +13,8 @@
 
 #include <sch_screen.h>
 #include <sch_symbol.h>
+#include <sch_sheet.h>
+#include <sch_sheet_pin.h>
 #include <sch_field.h>
 #include <sch_line.h>
 #include <sch_pin.h>
@@ -103,7 +105,7 @@ void SchOgdfAdapter::buildNodes()
 		if( SCH_FIELD* refField = sym->GetField( FIELD_T::REFERENCE ) )
 			refStr = refField->GetText().ToStdString();
 		if( !refStr.empty() )
-			m_refToSymbol[ refStr ] = sym;
+			m_refToNode[ refStr ] = n;
 
 		const std::unique_ptr<LIB_SYMBOL>& libSym = sym->GetLibSymbolRef();
 		if( libSym )
@@ -119,6 +121,34 @@ void SchOgdfAdapter::buildNodes()
 		}
 
 		const VECTOR2I pos = sym->GetPosition();
+		m_GA.x( n ) = static_cast<double>( pos.x );
+		m_GA.y( n ) = static_cast<double>( pos.y );
+	}
+
+	// M2: hierarchical sheets are also nodes.  Each SCH_SHEET item on
+	// the screen becomes one OGDF node with width/height = sheet
+	// bounding box.  Its sheet pins become ports in buildPorts().
+	// klicad-python's Circuit.instance(ref=...) emits one sheet per
+	// subcircuit instance; the ref string lives in the sheet's
+	// FIELD_T::SHEETNAME (or fallback to FIELD_T::REFERENCE).
+	for( SCH_ITEM* item : m_screen.Items().OfType( SCH_SHEET_T ) )
+	{
+		SCH_SHEET* sheet = static_cast<SCH_SHEET*>( item );
+		ogdf::node n     = m_graph.newNode();
+		m_sheetToNode[ sheet ] = n;
+		m_nodeToSheet[ n ]     = sheet;
+
+		std::string refStr;
+		if( SCH_FIELD* f = sheet->GetField( FIELD_T::SHEET_NAME ) )
+			refStr = f->GetText().ToStdString();
+		if( !refStr.empty() )
+			m_refToNode[ refStr ] = n;
+
+		const BOX2I bbox = sheet->GetBoundingBox();
+		m_GA.width( n )  = static_cast<double>( bbox.GetWidth() );
+		m_GA.height( n ) = static_cast<double>( bbox.GetHeight() );
+
+		const VECTOR2I pos = sheet->GetPosition();
 		m_GA.x( n ) = static_cast<double>( pos.x );
 		m_GA.y( n ) = static_cast<double>( pos.y );
 	}
@@ -152,6 +182,43 @@ void SchOgdfAdapter::buildPorts()
 
 			const std::string pinNum = pin->GetNumber().ToStdString();
 			m_nodePinToPort[ { n, pinNum } ] = portLocalIdx;
+		}
+	}
+
+	// M2: sheet pins → ports.  Sheet pins use SHEET_SIDE (LEFT/RIGHT/
+	// TOP/BOTTOM) where SCH_SYMBOL pins used PIN_ORIENTATION.  Keyed
+	// by pin NAME (the wxString text) rather than number — klicad-
+	// python's spec emits port-name keys for SubcircuitInstance
+	// connections, matching the SCH_SHEET_PIN's GetText().
+	auto sheetSideToPortSide = []( SHEET_SIDE s ) {
+		switch( s )
+		{
+		case SHEET_SIDE::LEFT:   return ogdf::PortSide::West;
+		case SHEET_SIDE::RIGHT:  return ogdf::PortSide::East;
+		case SHEET_SIDE::TOP:    return ogdf::PortSide::North;
+		case SHEET_SIDE::BOTTOM: return ogdf::PortSide::South;
+		default:                 return ogdf::PortSide::Undefined;
+		}
+	};
+
+	for( auto& [sheet, n] : m_sheetToNode )
+	{
+		const double nodeX = m_GA.x( n );
+		const double nodeY = m_GA.y( n );
+
+		for( SCH_SHEET_PIN* pin : sheet->GetPins() )
+		{
+			const ogdf::PortSide side = sheetSideToPortSide( pin->GetSide() );
+			const VECTOR2I pinPos = pin->GetPosition();
+			const double anchorX = static_cast<double>( pinPos.x ) - nodeX;
+			const double anchorY = static_cast<double>( pinPos.y ) - nodeY;
+
+			m_PGA.addPort( n, side, anchorX, anchorY );
+			const int portLocalIdx =
+				static_cast<int>( m_PGA.ports( n ).size() ) - 1;
+
+			const std::string pinName = pin->GetText().ToStdString();
+			m_nodePinToPort[ { n, pinName } ] = portLocalIdx;
 		}
 	}
 }
@@ -240,16 +307,16 @@ int SchOgdfAdapter::buildEdgesFromSpec( const std::vector<NetSpec>& aNets )
 
 		for( const auto& [ref, pinNum] : net.pins )
 		{
-			auto symIt = m_refToSymbol.find( ref );
-			if( symIt == m_refToSymbol.end() )
+			auto symIt = m_refToNode.find( ref );
+			if( symIt == m_refToNode.end() )
 			{
 				std::fprintf( stderr,
-					"[ogdf_adapter] net %s: ref %s not in m_refToSymbol\n",
+					"[ogdf_adapter] net %s: ref %s not in m_refToNode\n",
 					net.net_name.c_str(), ref.c_str() );
 				continue;
 			}
 
-			ogdf::node n = m_symbolToNode[ symIt->second ];
+			ogdf::node n = symIt->second;
 			auto portIt = m_nodePinToPort.find( { n, pinNum } );
 			if( portIt == m_nodePinToPort.end() )
 			{
@@ -477,6 +544,21 @@ LayoutReport SchOgdfAdapter::writeBackToScreen()
 	for( OldPlacement& op : oldPlacements )
 	{
 		op.sym->SetPosition( op.newSymPos );
+		++report.symbols_placed;
+	}
+
+	// M2: sheet positions.  SCH_SHEET::SetPosition moves the sheet's
+	// origin; sheet pins on its boundary translate automatically.
+	// Sheet-pin labels on the *outside* (hierarchical labels in this
+	// screen that mirror the sheet's pin) need the same translate-
+	// labels Stage A.1 treatment as symbol-pin labels.
+	for( auto& [sheet, n] : m_sheetToNode )
+	{
+		const VECTOR2I newPos(
+			static_cast<int>( std::lround( m_GA.x( n ) ) ),
+			static_cast<int>( std::lround( m_GA.y( n ) ) ) );
+		const VECTOR2I delta = newPos - sheet->GetPosition();
+		sheet->Move( delta );
 		++report.symbols_placed;
 	}
 
