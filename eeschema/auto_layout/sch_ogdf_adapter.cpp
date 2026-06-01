@@ -547,17 +547,24 @@ LayoutReport SchOgdfAdapter::writeBackToScreen()
 		++report.symbols_placed;
 	}
 
-	// M2: sheet positions.  SCH_SHEET::SetPosition moves the sheet's
-	// origin; sheet pins on its boundary translate automatically.
-	// Sheet-pin labels on the *outside* (hierarchical labels in this
-	// screen that mirror the sheet's pin) need the same translate-
-	// labels Stage A.1 treatment as symbol-pin labels.
+	// M2: sheet positions.  SCH_SHEET::Move() shifts the sheet's
+	// origin AND its sheet-pins together.  Snapshot old sheet-pin
+	// positions BEFORE moving so Stage A.1's label-translate logic
+	// can find any label that was emitted at an old sheet-pin coord.
 	for( auto& [sheet, n] : m_sheetToNode )
 	{
-		const VECTOR2I newPos(
+		OldPlacement op;
+		op.sym       = nullptr;  // sentinel: sheet, not symbol
+		op.oldSymPos = sheet->GetPosition();
+		op.newSymPos = VECTOR2I(
 			static_cast<int>( std::lround( m_GA.x( n ) ) ),
 			static_cast<int>( std::lround( m_GA.y( n ) ) ) );
-		const VECTOR2I delta = newPos - sheet->GetPosition();
+		for( SCH_SHEET_PIN* p : sheet->GetPins() )
+			op.oldPinPositions.push_back( p->GetPosition() );
+		oldPlacements.push_back( std::move( op ) );
+
+		const VECTOR2I delta = oldPlacements.back().newSymPos
+		                       - oldPlacements.back().oldSymPos;
 		sheet->Move( delta );
 		++report.symbols_placed;
 	}
