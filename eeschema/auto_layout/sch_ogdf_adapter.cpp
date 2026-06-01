@@ -682,9 +682,10 @@ LayoutReport SchOgdfAdapter::writeBackToScreen()
 			if( m_powerDrivenNets.count( text ) == 0 )
 				continue;
 
-			// Only delete labels that sit on a symbol PIN — those are
-			// the redundant pin-labels the harness emitted.  Stand-
-			// alone labels (e.g. for nets without a power symbol) stay.
+			// Only delete labels that sit on a symbol pin or sheet pin
+			// — those are the redundant pin-labels the harness
+			// emitted.  Stand-alone labels (e.g. for nets without a
+			// power symbol) stay.
 			const VECTOR2I labelPos = label->GetPosition();
 			bool onPin = false;
 			for( auto& [sym, n] : m_symbolToNode )
@@ -699,6 +700,22 @@ LayoutReport SchOgdfAdapter::writeBackToScreen()
 				}
 				if( onPin )
 					break;
+			}
+			if( !onPin )
+			{
+				for( auto& [sheet, n] : m_sheetToNode )
+				{
+					for( SCH_SHEET_PIN* p : sheet->GetPins() )
+					{
+						if( p->GetPosition() == labelPos )
+						{
+							onPin = true;
+							break;
+						}
+					}
+					if( onPin )
+						break;
+				}
 			}
 			if( onPin )
 				labelsToRemove.push_back( item );
