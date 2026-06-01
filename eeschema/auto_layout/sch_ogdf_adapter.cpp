@@ -161,11 +161,72 @@ int SchOgdfAdapter::buildEdgesFromSpec( const std::vector<NetSpec>& aNets )
 {
 	int edgeCount = 0;
 
-	// Diagnostic: warn for every net we drop because we couldn't map
-	// either the ref or the pin — saves a debug cycle when the layout
-	// silently produces zero wires.  Goes to stderr via wxLog at TRACE
-	// level so it shows up in the ASan log only.
-	for( const NetSpec& net : aNets )
+	// Augment the Python-emitted spec with power symbols actually
+	// present on the screen.  Spec_pane_harness emits power symbols
+	// (#PWR_VCC, #PWR_GND, etc.) at to_schematic time, but klicad-
+	// python's _net_spec_for only iterates Circuit.parts and never
+	// sees them — so VCC and GND nets show up with a single pin each
+	// (the consumer pin) and get dropped by the >=2-pin filter below.
+	// Without the augmentation power symbols become floating OGDF
+	// nodes with no edges and the layout clusters them at arbitrary
+	// positions.
+	//
+	// Power symbol convention: ref starts with '#PWR', Value field
+	// equals the net name, single pin numbered "1" of PT_POWER_IN type.
+	std::vector<NetSpec> nets = aNets;
+	std::map<std::string, std::vector<std::pair<std::string,std::string>>*>
+	    netByName;
+	for( NetSpec& ns : nets )
+		netByName[ ns.net_name ] = &ns.pins;
+
+	int augmented = 0;
+	for( SCH_ITEM* item : m_screen.Items().OfType( SCH_SYMBOL_T ) )
+	{
+		SCH_SYMBOL* sym = static_cast<SCH_SYMBOL*>( item );
+		std::string ref;
+		if( SCH_FIELD* f = sym->GetField( FIELD_T::REFERENCE ) )
+			ref = f->GetText().ToStdString();
+		if( ref.rfind( "#PWR", 0 ) != 0 )
+			continue;
+
+		std::string netName;
+		if( SCH_FIELD* f = sym->GetField( FIELD_T::VALUE ) )
+			netName = f->GetText().ToStdString();
+		if( netName.empty() )
+			continue;
+
+		auto it = netByName.find( netName );
+		if( it == netByName.end() )
+		{
+			nets.push_back( { netName, {} } );
+			netByName[ netName ] = &nets.back().pins;
+			it = netByName.find( netName );
+		}
+
+		// High-side power (VCC, +3V3, +5V, ...) goes to the FRONT of
+		// the pin list so it becomes the star-pattern anchor and
+		// Sugiyama places it ABOVE the consumer.  Low-side (GND, -5V,
+		// VSS, ...) goes to the BACK so the consumer is above and the
+		// power symbol sits below.  The heuristic checks the net name
+		// directly — robust for the conventional KiCad power libraries
+		// and easy to extend per-project.
+		auto isLowSide = []( const std::string& n ) {
+			return n == "GND" || n == "VSS" || n == "GNDA" || n == "GNDD"
+			    || ( !n.empty() && n[0] == '-' );
+		};
+		if( isLowSide( netName ) )
+			it->second->emplace_back( ref, std::string( "1" ) );
+		else
+			it->second->insert( it->second->begin(),
+			                    std::make_pair( ref, std::string( "1" ) ) );
+		++augmented;
+	}
+
+	std::fprintf( stderr,
+		"[ogdf_adapter] buildEdgesFromSpec: augmented %d power-symbol pins\n",
+		augmented );
+
+	for( const NetSpec& net : nets )
 	{
 		if( net.pins.size() < 2 )
 			continue;
@@ -249,6 +310,12 @@ void SchOgdfAdapter::runLayout()
 	auto* hLayout = new ogdf::FastHierarchyLayout();
 	hLayout->nodeDistance( 4.0 * GRID_IU );
 	hLayout->layerDistance( 8.0 * GRID_IU );
+	hLayout->fixedLayerDistance( true );  // diagnostic: skip the dyn-edge cap
+
+	std::fprintf( stderr,
+		"[ogdf_adapter] FHL settings: nodeDist=%.0f layerDist=%.0f fixed=%d\n",
+		hLayout->nodeDistance(), hLayout->layerDistance(),
+		hLayout->fixedLayerDistance() ? 1 : 0 );
 
 	ogdf::SugiyamaLayout SL;
 	SL.setCrossMin( heur );
