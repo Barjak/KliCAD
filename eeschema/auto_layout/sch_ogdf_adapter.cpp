@@ -870,7 +870,7 @@ LayoutReport SchOgdfAdapter::writeBackToScreen()
 		wireEnds.insert( { s.b.x, s.b.y } );
 	}
 
-	const int FIX_TOL = 4 * SCH_GRID_IU;
+	const int FIX_TOL = 12 * SCH_GRID_IU;  // up to 12 grids ≈ 15 mm
 	int bridgesAdded = 0;
 	for( const VECTOR2I& pinPos : pinPosList )
 	{
