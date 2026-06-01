@@ -334,16 +334,52 @@ int SchOgdfAdapter::buildEdgesFromSpec( const std::vector<NetSpec>& aNets )
 		if( endpoints.size() < 2 )
 			continue;
 
-		// Star pattern: connect every endpoint after the anchor to the
-		// anchor.  Matches the existing Python ELK adapter's edge model
-		// and is what OGDF's Sugiyama expects for hyper-nets.
-		const Endpoint& anchor = endpoints.front();
-		for( size_t i = 1; i < endpoints.size(); ++i )
+		// Star pattern: connect every endpoint to the anchor.
+		//
+		// Sugiyama puts edge.source above edge.target.  For a net with
+		// N pins we want ALL consumers in the same layer, with the
+		// "drain" (the power symbol on a power-driven net, or the
+		// first pin on a signal net) one layer further along.
+		//
+		// High-side power (VCC, +3V3, ...) is at the FRONT of the pin
+		// list (per the augmentation rule).  All other pins should be
+		// targets of it: edges anchor → other puts power above
+		// consumers.
+		//
+		// Low-side power (GND, VSS, ...) is at the BACK.  All other
+		// pins should be sources pointing to it: edges other → anchor
+		// puts power below consumers, with consumers as siblings.
+		//
+		// Signal nets default to the high-side direction (anchor in
+		// front).  Doesn't matter much for layer assignment since
+		// there's no "ground" to anchor below; Sugiyama picks something
+		// reasonable from the spanning DAG.
+		const bool lowSideDrain = m_powerDrivenNets.count( net.net_name ) > 0
+		                          && ( net.net_name == "GND" || net.net_name == "VSS"
+		                               || net.net_name == "GNDA" || net.net_name == "GNDD"
+		                               || ( !net.net_name.empty() && net.net_name[0] == '-' ) );
+
+		if( lowSideDrain )
 		{
-			const Endpoint& other = endpoints[i];
-			ogdf::edge e = m_graph.newEdge( anchor.node, other.node );
-			m_PGA.setEdgePortsByIndex( e, anchor.portIdx, other.portIdx );
-			++edgeCount;
+			const Endpoint& drain = endpoints.back();
+			for( size_t i = 0; i + 1 < endpoints.size(); ++i )
+			{
+				const Endpoint& src = endpoints[i];
+				ogdf::edge e = m_graph.newEdge( src.node, drain.node );
+				m_PGA.setEdgePortsByIndex( e, src.portIdx, drain.portIdx );
+				++edgeCount;
+			}
+		}
+		else
+		{
+			const Endpoint& anchor = endpoints.front();
+			for( size_t i = 1; i < endpoints.size(); ++i )
+			{
+				const Endpoint& other = endpoints[i];
+				ogdf::edge e = m_graph.newEdge( anchor.node, other.node );
+				m_PGA.setEdgePortsByIndex( e, anchor.portIdx, other.portIdx );
+				++edgeCount;
+			}
 		}
 	}
 
