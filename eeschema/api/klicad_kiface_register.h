@@ -30,11 +30,14 @@
 
 // Per-binding register functions (one per kiface-resident bindings_*.cpp).
 void klicad_register_annotation_bindings( pybind11::module_& m );
-void klicad_register_auto_layout_bindings( pybind11::module_& m );
+// klicad_register_auto_layout_bindings: deleted in F-S3 Phase C
+// (Fork 4 a atomic deletion alongside _ogdf_layout.py and
+// _klicad_sch.py).  Use klicad_native_schematic_compose instead.
 void klicad_register_hierarchy_bindings( pybind11::module_& m );
 void klicad_register_ratsnest_bindings( pybind11::module_& m );
 void klicad_register_sch_actions_bindings( pybind11::module_& m );
 void klicad_register_schematic_state_bindings( pybind11::module_& m );
+void klicad_register_schematic_compose_bindings( pybind11::module_& m );
 void klicad_register_sim_advanced_bindings( pybind11::module_& m );
 void klicad_register_simulator_bindings( pybind11::module_& m );
 void klicad_register_spec_pane_bindings( pybind11::module_& m );

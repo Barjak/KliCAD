@@ -245,6 +245,37 @@ bool CONNECTION_SUBGRAPH::ResolveDrivers( bool aCheckMultipleDrivers )
     {
         PRIORITY item_priority = GetDriverPriority( item );
 
+        // GOAL.md F-S4c: electrical-type cross-check.  A SCH_LABEL
+        // / SCH_GLOBALLABEL whose text matches the displayed text of
+        // a power-pin driver elsewhere in this subgraph loses to the
+        // power pin.  Before this check, the priority ladder ranked
+        // by SCH_ITEM type alone — a global label named "VCC"
+        // out-prioritized a power-symbol pin named "VCC" even though
+        // the power pin is the electrically meaningful source.  The
+        // "name string does the work" decision flips to "electrical
+        // type does the work."
+        if( ( item->Type() == SCH_LABEL_T || item->Type() == SCH_GLOBAL_LABEL_T )
+            && item_priority > PRIORITY::PIN )
+        {
+            SCH_LABEL_BASE* lbl = static_cast<SCH_LABEL_BASE*>( item );
+            const wxString labelText = lbl->GetShownText( false );
+            for( SCH_ITEM* other : m_drivers )
+            {
+                if( other == item || other->Type() != SCH_PIN_T )
+                    continue;
+                SCH_PIN* pwr = static_cast<SCH_PIN*>( other );
+                if( !pwr->IsLocalPower() && !pwr->IsGlobalPower() )
+                    continue;
+                if( pwr->GetShownName() == labelText )
+                {
+                    // Demote the label.  The power pin wins as
+                    // m_driver via its own priority.
+                    item_priority = PRIORITY::PIN;
+                    break;
+                }
+            }
+        }
+
         if( item_priority == PRIORITY::PIN )
         {
             SCH_PIN* pin = static_cast<SCH_PIN*>( item );
@@ -768,6 +799,7 @@ void CONNECTION_GRAPH::Reset()
     m_net_code_to_subgraphs_map.clear();
     m_net_name_to_subgraphs_map.clear();
     m_item_to_subgraph_map.clear();
+    m_unmatched_hier.clear();
     m_local_label_cache.clear();
     m_global_label_cache.clear();
     m_last_net_code = 1;
@@ -2944,104 +2976,12 @@ static SCH_SHEET* resolveHierPinPushTarget( const SCH_SHEET_PATH& aPath,
 }
 
 
-/**
- * Bus-pin bit fan-out at the hier-pin connection site (Phase R3.3).
- *
- * When a hier-pin lives on a multi-channel sheet (repeat_count > 1) and the
- * pin's name is bus-syntax (e.g. "DATA[0..3]") whose width equals the sheet's
- * repeat_count, the body-side scalar binding for slot K is bit K of the
- * parent's bus.  This helper returns the bit-K scalar name (escaped for net
- * lookup) for a path that already ends in the slot's SCH_SHEET, or empty when
- * fan-out is not applicable.
- *
- * Width mismatches and non-bus pins return empty; in that case the caller
- * falls back to the pre-R3.3 behavior (full bus / scalar comparison).  Width
- * mismatch is reported separately by ercCheckRepeatBusPinWidths so the
- * propagation step stays silent on every graph rebuild.
- *
- * Scalar pins on repeated sheets are left untouched (shared across all
- * slots) — only bus pins fan out per slot.
- *
- * @param aPath  Path that has already had the slot's SCH_SHEET pushed onto
- *               it (i.e. aPath.Last() is the synthetic clone for slot K or
- *               the on-canvas template for slot 0).
- * @param aPin   The hierarchical sheet pin whose effective bit name is
- *               wanted; the pin always lives on the on-canvas template
- *               (clones are never inserted into any screen).
- * @return       Both the bit-K scalar member name (e.g. "DATA1" for slot 1
- *               on a "DATA[0..3]" pin) and the bus prefix base name
- *               ("DATA") on success.  Both fields are empty when no
- *               fan-out applies (scalar pin, no repeat, width mismatch,
- *               etc.) — callers must treat empty `bitName` as "matcher
- *               should fall back to the full bus pin name".
- *
- * The base-name field supports Candidate A from the multi-channel
- * vectorization audit: when the body has a scalar hier-port `DATA` on a
- * `repeat=N` sheet whose pin is `DATA[0..N-1]`, the forward/reverse
- * direction matchers accept either the bit-K member name (legacy
- * hand-unrolled shape) OR the bus prefix (new vectorized shape).  Either
- * match still records `m_repeat_bus_bit_index = slot K` so the existing
- * Clone() pass renames to the K-th bus member.
- */
-struct RepeatBusPinBitInfo
-{
-    wxString prefix;   ///< Bus base name (e.g. "DATA"); empty when fan-out doesn't apply.
-    wxString bitName;  ///< Bit-K member name (e.g. "DATA1"); empty when fan-out doesn't apply.
-};
-
-
-static RepeatBusPinBitInfo repeatBusPinBitInfo( const SCH_SHEET_PATH& aPath,
-                                                SCH_SHEET_PIN*        aPin )
-{
-    RepeatBusPinBitInfo info;
-
-    if( !aPin )
-        return info;
-
-    SCH_SHEET* tmpl = aPin->GetParent();
-
-    if( !tmpl || tmpl->GetRepeatCount() <= 1 )
-        return info;
-
-    int slot = aPath.GetSlotIndex();
-
-    if( slot < 0 )
-        return info;
-
-    // Pin name as authored on the sheet (unescaped form expected by
-    // ParseBusVector); GetShownText resolves any text variables, mirroring
-    // the path used by CONNECTION_SUBGRAPH::driverName for SCH_SHEET_PIN_T.
-    SCH_SHEET_PATH pinPath = aPath;
-    wxString pinText = aPin->GetShownText( &pinPath, false );
-
-    wxString prefix;
-    std::vector<wxString> members;
-
-    if( !NET_SETTINGS::ParseBusVector( pinText, &prefix, &members ) )
-        return info;
-
-    if( static_cast<int>( members.size() ) != tmpl->GetRepeatCount() )
-        return info;  // Width mismatch — ERC reports it separately.
-
-    if( slot < 0 || slot >= static_cast<int>( members.size() ) )
-        return info;
-
-    info.prefix  = EscapeString( prefix, CTX_NETNAME );
-    info.bitName = EscapeString( members[ static_cast<size_t>( slot ) ], CTX_NETNAME );
-    return info;
-}
-
-
-/**
- * Thin wrapper preserving the legacy single-return interface for any
- * call sites that only need the bit-K member name.  The new
- * propagateToNeighbors matcher uses repeatBusPinBitInfo directly so it
- * can fall back to base-name matching.
- */
-static wxString repeatBusPinBitName( const SCH_SHEET_PATH& aPath, SCH_SHEET_PIN* aPin )
-{
-    return repeatBusPinBitInfo( aPath, aPin ).bitName;
-}
+// F-S4b / F-S4d: the former bus-bit name-arithmetic helpers were
+// deleted with no replacement.  Multi-channel bus propagation moves
+// to the BusPropagator walker class
+// (`connection_graph_bus_propagator.{h,cpp}`); the scalar
+// propagateToNeighbors path is now reference-mediated and no longer
+// reconstructs per-bit names from a parent bus prefix + slot index.
 
 
 void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, bool aForce )
@@ -3086,20 +3026,24 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
             if( it == m_sheet_to_subgraphs_map.end() )
                 continue;
 
-            // Phase R3.3: a bus-syntax sheet pin on a multi-channel (repeat>1)
-            // sheet fans out one bit per slot; on slot K the body-side scalar
-            // binding for the pin is bit K of the parent's bus.  When the
-            // helper returns a non-empty bit name, we accept body labels
-            // that match EITHER the bit-K member name (legacy hand-unrolled
-            // shape: DATA0..DATA3 labels) OR the bus base name (Candidate A
-            // / vectorized shape: one DATA label).  Either match still
-            // records m_repeat_bus_bit_index = slot K so the Clone() pass
-            // renames to the K-th member of the parent's bus driver.
-            const RepeatBusPinBitInfo info = repeatBusPinBitInfo( path, pin );
-            const wxString& bitName  = info.bitName;
-            const wxString& basePrefix = info.prefix;
-            const wxString pinName = bitName.IsEmpty() ? aParent->GetNameForDriver( pin )
-                                                       : bitName;
+            // F-S4b: cross-sheet propagation walks typed
+            // SCH_HIERLABEL::m_matchedEndpoint references, not net-name
+            // strings (closure invariants 9 + 11).  Each parent-side
+            // SCH_SHEET_PIN was tagged by compose() with a fresh KIID
+            // that the matching child-side SCH_HIERLABEL also carries;
+            // we resolve here by KIID lookup.  If the parent pin has
+            // no matched endpoint, propagation cannot proceed for this
+            // pin — record it for ERC and skip.  The legacy bus-bit
+            // name-arithmetic fallback is excised; multi-channel
+            // propagation moves to a separate BusPropagator walker
+            // (F-S4d).
+            const KIID targetKiid = pin->GetMatchedEndpoint();
+
+            if( targetKiid == niluuid )
+            {
+                m_unmatched_hier.insert( pin );
+                continue;
+            }
 
             for( CONNECTION_SUBGRAPH* candidate : it->second )
             {
@@ -3112,42 +3056,27 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
 
                 for( SCH_HIERLABEL* label : candidate->m_hier_ports )
                 {
-                    const wxString candidateName = candidate->GetNameForDriver( label );
-                    const bool bitMatch  = ( candidateName == pinName );
-                    // Base-name fallback only fires on a multi-channel
-                    // bus pin (bitName non-empty) and only when the
-                    // bit-name didn't already match — bit-name wins, so
-                    // hand-unrolled schematics keep working unchanged.
-                    const bool baseMatch = !bitMatch
-                                           && !bitName.IsEmpty()
-                                           && !basePrefix.IsEmpty()
-                                           && candidateName == basePrefix;
-
-                    if( bitMatch || baseMatch )
+                    // Typed match: either side of the reference is
+                    // sufficient.  compose() may populate the child
+                    // side with the parent pin's KIID, or the parent
+                    // side with the child label's KIID, depending on
+                    // which side "owns" the link.
+                    if( label->GetMatchedEndpoint() != pin->m_Uuid
+                        && label->m_Uuid != targetKiid )
                     {
-                        wxLogTrace( ConnTrace, wxS( "%lu: found child %lu (%s)" ), aParent->m_code,
-                                    candidate->m_code, candidate->m_driver_connection->Name() );
-
-                        candidate->m_hier_parent = aParent;
-                        aParent->m_hier_children.insert( candidate );
-
-                        // R3.3: when the match came via per-slot bit fan-out
-                        // (bitName non-empty), record the slot index so the
-                        // final Clone() pass selects the K-th member of the
-                        // parent's bus driver (DATA[0..3] -> DATA[K])
-                        // instead of cloning the whole-bus driver name.
-                        // Both bit-name and base-name matches use the same
-                        // slot index from the path.
-                        if( !bitName.IsEmpty() )
-                            candidate->m_repeat_bus_bit_index = path.GetSlotIndex();
-
-                        // Should we skip adding the candidate to the list if the parent and candidate subgraphs
-                        // are not the same?
-                        wxASSERT( candidate->m_graph == aParent->m_graph );
-
-                        search_list.push_back( candidate );
-                        break;
+                        continue;
                     }
+
+                    wxLogTrace( ConnTrace, wxS( "%lu: found child %lu (%s)" ), aParent->m_code,
+                                candidate->m_code, candidate->m_driver_connection->Name() );
+
+                    candidate->m_hier_parent = aParent;
+                    aParent->m_hier_children.insert( candidate );
+
+                    wxASSERT( candidate->m_graph == aParent->m_graph );
+
+                    search_list.push_back( candidate );
+                    break;
                 }
             }
             }  // close P7b slot enumeration
@@ -3163,93 +3092,50 @@ void CONNECTION_GRAPH::propagateToNeighbors( CONNECTION_SUBGRAPH* aSubgraph, boo
             if( it == m_sheet_to_subgraphs_map.end() )
                 continue;
 
+            // F-S4b: reverse-direction match (child hier-label →
+            // parent sheet pin) is also reference-mediated.  We walk
+            // candidates and accept the one whose sheet pin carries
+            // the matching KIID — never by net-name string equality.
+            // Bus-bit fan-out / name arithmetic deleted; that walk
+            // lives in BusPropagator (F-S4d) post-rewrite.
+            const KIID labelTargetKiid = label->GetMatchedEndpoint();
+
+            if( labelTargetKiid == niluuid )
+            {
+                m_unmatched_hier.insert( label );
+                continue;
+            }
+
             for( CONNECTION_SUBGRAPH* candidate : it->second )
             {
                 if( candidate->m_hier_pins.empty() || visited.contains( candidate ) )
                     continue;
 
-                // Pre-R3.3, a same-type filter rejected candidates whose
-                // driver wasn't the same connection type (scalar vs bus).
-                // That filter is the wrong gate for multi-channel: a
-                // scalar body hier-label on slot K is *expected* to
-                // connect to a bus parent pin (via repeatBusPinBitName
-                // bit fan-out).  Defer the type check — if no bit name
-                // applies, the name comparison below uses the candidate
-                // driver's plain name and the types will still need to
-                // agree because the names won't match across bus/scalar.
-                const bool same_type =
-                        ( candidate->m_driver_connection->Type()
-                          == aParent->m_driver_connection->Type() );
-                const bool candidate_is_bus = candidate->m_driver_connection->IsBus();
-
-                if( !same_type && !candidate_is_bus )
-                    continue;
-
                 for( SCH_SHEET_PIN* pin : candidate->m_hier_pins )
                 {
-                    // P7b: the original gate reconstructed pin_path =
-                    // parent_path + pushTarget and required equality
-                    // with aParent->m_sheet (the slot path on the
-                    // child side).  Pre-P7 push_back(clone) restored
-                    // slot identity automatically; post-P7 the clone
-                    // is gone, push_back(template) collapses to slot
-                    // 0, and slot K>0 always failed the equality check
-                    // — causing scalar body-side hier-labels to
-                    // silently never reach their parent's hier-pin.
-                    //
-                    // The gate's real intent is: "this candidate pin
-                    // belongs to aParent's child sheet."  Compare the
-                    // pin's template KIID against the slot leaf's
-                    // template KIID directly; no path reconstruction
-                    // required, and slot identity is preserved for
-                    // the matcher below (which reads slot info from
-                    // aParent->m_sheet itself).
+                    // Cheap structural filter retained — the candidate
+                    // pin must belong to aParent's child sheet, else
+                    // the typed lookup might accidentally match across
+                    // unrelated hierarchies on KIID collisions (which
+                    // shouldn't happen, but the filter is essentially
+                    // free and the failure mode is bad).
                     if( pin->GetParent()->m_Uuid
                             != aParent->m_sheet.LastInstance().TemplateKiid() )
                         continue;
 
-                    // Phase R3.3: mirror the bus-pin bit fan-out in the
-                    // reverse-direction (child-port -> parent-pin) match so a
-                    // body-side scalar hier-label on slot K can attach to its
-                    // parent's bus pin.  Candidate A extension: also accept a
-                    // body label whose name is the bus base name (e.g.
-                    // "DATA") — the slot index in aParent->m_sheet still
-                    // drives the bit-K rename in the Clone() pass.  Bit-name
-                    // match has priority for backward compatibility.
-                    const RepeatBusPinBitInfo info =
-                            repeatBusPinBitInfo( aParent->m_sheet, pin );
-                    const wxString& bitName    = info.bitName;
-                    const wxString& basePrefix = info.prefix;
-                    const wxString pinName = bitName.IsEmpty()
-                                                     ? candidate->GetNameForDriver( pin )
-                                                     : bitName;
-
-                    const wxString parentLabelName = aParent->GetNameForDriver( label );
-                    const bool bitMatch  = ( parentLabelName == pinName );
-                    const bool baseMatch = !bitMatch
-                                           && !bitName.IsEmpty()
-                                           && !basePrefix.IsEmpty()
-                                           && parentLabelName == basePrefix;
-
-                    if( bitMatch || baseMatch )
+                    if( pin->GetMatchedEndpoint() != label->m_Uuid
+                        && pin->m_Uuid != labelTargetKiid )
                     {
-                        wxLogTrace( ConnTrace, wxS( "%lu: found additional parent %lu (%s)" ),
-                                    aParent->m_code, candidate->m_code, candidate->m_driver_connection->Name() );
-
-                        // R3.3: same per-slot binding as the forward
-                        // direction — here aParent is the body subgraph
-                        // and candidate is the parent bus.  Record the
-                        // slot index from aParent->m_sheet so the
-                        // subsequent Clone() pass swaps the whole-bus
-                        // driver for the K-th bus member.  Both bit-name
-                        // and base-name match paths set the same index.
-                        if( !bitName.IsEmpty() )
-                            aParent->m_repeat_bus_bit_index = aParent->m_sheet.GetSlotIndex();
-
-                        aParent->m_hier_children.insert( candidate );
-                        search_list.push_back( candidate );
-                        break;
+                        continue;
                     }
+
+                    wxLogTrace( ConnTrace, wxS( "%lu: found additional parent %lu (%s)" ),
+                                aParent->m_code, candidate->m_code,
+                                candidate->m_driver_connection->Name() );
+
+                    aParent->m_hier_children.insert( candidate );
+                    search_list.push_back( candidate );
+                    break;
                 }
             }
         }
@@ -3970,6 +3856,83 @@ int CONNECTION_GRAPH::RunERC()
     if( settings.IsTestEnabled( ERCE_GENERIC_ERROR ) )
     {
         error_count += ercCheckRepeatBusPinWidths();
+    }
+
+    // F-S4b: every sheet pin / hier label that reached propagation with
+    // an empty m_matchedEndpoint is a loud cross-sheet connectivity
+    // failure (closure invariants 9 + 11 + 12).  compose() owns
+    // populating the typed reference; if it didn't, ERC fires here
+    // rather than silently isolating the subgraph.
+    if( settings.IsTestEnabled( ERCE_UNMATCHED_HIER_REFERENCE ) )
+    {
+        for( SCH_ITEM* item : m_unmatched_hier )
+        {
+            if( !item )
+                continue;
+
+            std::shared_ptr<ERC_ITEM> ercItem =
+                    ERC_ITEM::Create( ERCE_UNMATCHED_HIER_REFERENCE );
+            ercItem->SetItems( item );
+
+            wxString label;
+
+            if( SCH_LABEL_BASE* labelBase = dynamic_cast<SCH_LABEL_BASE*>( item ) )
+                label = UnescapeString( labelBase->GetText() );
+            else
+                label = item->GetClass();
+
+            ercItem->SetErrorMessage(
+                    wxString::Format(
+                            _( "Cross-sheet reference '%s' has no matched endpoint KIID; "
+                               "compose() did not resolve the typed sheet-pin / "
+                               "hier-label link." ),
+                            label ) );
+
+            // Place the marker on whatever screen owns the item.
+            SCH_SCREEN* itemScreen = nullptr;
+
+            if( item->Type() == SCH_SHEET_PIN_T )
+            {
+                SCH_SHEET_PIN* pin = static_cast<SCH_SHEET_PIN*>( item );
+
+                if( SCH_SHEET* parentSheet = pin->GetParent() )
+                {
+                    // Sheet pin lives in the parent screen (the screen
+                    // that contains the SCH_SHEET object).
+                    for( const SCH_SHEET_PATH& sp : m_sheetList )
+                    {
+                        if( sp.LastScreen()
+                            && sp.LastScreen()->CheckIfOnDrawList( parentSheet ) )
+                        {
+                            itemScreen = sp.LastScreen();
+                            ercItem->SetSheetSpecificPath( sp );
+                            ercItem->SetItemsSheetPaths( sp );
+                            break;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                auto it = m_item_to_subgraph_map.find( item );
+
+                if( it != m_item_to_subgraph_map.end() && it->second )
+                {
+                    itemScreen = it->second->m_sheet.LastScreen();
+                    ercItem->SetSheetSpecificPath( it->second->m_sheet );
+                    ercItem->SetItemsSheetPaths( it->second->m_sheet );
+                }
+            }
+
+            if( itemScreen )
+            {
+                SCH_MARKER* marker =
+                        new SCH_MARKER( std::move( ercItem ), item->GetPosition() );
+                itemScreen->Append( marker );
+            }
+
+            ++error_count;
+        }
     }
 
     return error_count;

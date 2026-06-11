@@ -1514,6 +1514,18 @@ void SCH_IO_KICAD_SEXPR::saveText( SCH_TEXT* aText )
     if( aText->IsLocked() )
         KICAD_FORMAT::FormatBool( m_out, "locked", true );
 
+    // GOAL.md F-S4a: persist typed cross-sheet reference on hier
+    // labels.  Backward-compatible — readers without the keyword
+    // simply don't see the token; absent reads as default-constructed
+    // (i.e. unmatched) KIID.
+    if( aText->Type() == SCH_HIER_LABEL_T )
+    {
+        const KIID& uuid = static_cast<SCH_HIERLABEL*>( aText )->GetMatchedEndpoint();
+        if( uuid != KIID( 0 ) )
+            m_out->Print( "(matched_endpoint \"%s\")",
+                          uuid.AsString().ToStdString().c_str() );
+    }
+
     if( label )
     {
         for( SCH_FIELD& field : label->GetFields() )

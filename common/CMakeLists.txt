@@ -73,6 +73,7 @@ if( NOT (${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_BINARY_DIR} ) )
         DEPENDS ${REMOTE_PROVIDER_SCHEMA_FILES}
         COMMENT "Copying remote provider schema files into build directory"
     )
+    klicad_register_runtime_asset( remote_provider_schema_build_copy )  # F-B2
 endif()
 
 install( FILES

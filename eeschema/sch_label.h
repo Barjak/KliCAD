@@ -664,11 +664,29 @@ public:
 
     bool AutoRotateOnPlacementSupported() const override { return true; }
 
+    /**
+     * GOAL.md F-S4a — typed reference to the matching endpoint
+     * (an SCH_SHEET_PIN on the parent side, or another SCH_HIERLABEL
+     * on the child side).  Empty KIID means "not yet matched"; ERC
+     * raises `unmatched_hier_reference` (F-S4b) if it stays empty
+     * past propagation.
+     *
+     * Populated at compose time by `bindings_schematic_compose.cpp`,
+     * persisted in the s-expression `.kicad_sch` as an optional
+     * `(matched_endpoint <uuid>)` token (backward-compatible:
+     * absent reads as KIID()).
+     */
+    const KIID& GetMatchedEndpoint() const { return m_matchedEndpoint; }
+    void SetMatchedEndpoint( const KIID& aUuid ) { m_matchedEndpoint = aUuid; }
+
 private:
     bool doIsConnected( const VECTOR2I& aPosition ) const override
     {
         return EDA_TEXT::GetTextPos() == aPosition;
     }
+
+    /// F-S4a: typed cross-sheet reference (see accessor doc above).
+    KIID m_matchedEndpoint;
 };
 
 #endif /* SCH_LABEL_H */

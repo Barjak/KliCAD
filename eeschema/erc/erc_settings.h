@@ -93,8 +93,12 @@ enum ERCE_T
     ERCE_UNCONNECTED_WIRE_ENDPOINT,         ///< A label is connected to more than one wire.
     ERCE_STACKED_PIN_SYNTAX,                ///< Pin name resembles stacked pin notation.
     ERCE_FIELD_NAME_WHITESPACE,             ///< Field name has leading or trailing whitespace.
+    ERCE_UNMATCHED_HIER_REFERENCE,          ///< F-S4b: a SCH_SHEET_PIN or SCH_HIERLABEL reached
+                                            ///< CONNECTION_GRAPH propagation with an empty
+                                            ///< m_matchedEndpoint KIID — the typed cross-sheet
+                                            ///< reference was never resolved by compose.
 
-    ERCE_LAST = ERCE_FIELD_NAME_WHITESPACE,
+    ERCE_LAST = ERCE_UNMATCHED_HIER_REFERENCE,
 
     ERCE_DUPLICATE_PIN_ERROR,
     ERCE_PIN_TO_PIN_WARNING, // pin connected to an other pin: warning level

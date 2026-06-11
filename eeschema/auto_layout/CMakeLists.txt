@@ -6,8 +6,11 @@
 # outside auto_layout/ doesn't see the OGDF API.
 
 add_library( klicad_auto_layout STATIC
-    sch_ogdf_adapter.cpp
-    sch_auto_layout.cpp
+    sch_elk_adapter.cpp
+    sch_layout_transaction.cpp
+    connection_graph_projection.cpp
+    elk_hierarchy_builder.cpp
+    wire_topology.cpp
     )
 
 target_include_directories( klicad_auto_layout
@@ -30,7 +33,7 @@ target_include_directories( klicad_auto_layout
 # <sch_screen.h>/<sch_symbol.h> and need the full transitive
 # include set.
 target_link_libraries( klicad_auto_layout
-    PUBLIC  OGDF
+    PUBLIC  elk_core
     PRIVATE common
     )
 

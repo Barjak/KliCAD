@@ -719,6 +719,7 @@ target_link_libraries( pcbnew_kiface_objects
 add_library( pcbnew_kiface MODULE
     pcbnew.cpp
     )
+klicad_register_runtime_asset( pcbnew_kiface )  # F-B2
 
 set_target_properties( pcbnew_kiface PROPERTIES
 #Decorate OUTPUT_NAME with PREFIX and SUFFIX, creating something like

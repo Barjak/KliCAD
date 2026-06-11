@@ -49,6 +49,7 @@ add_executable( bitmap2component WIN32 MACOSX_BUNDLE
     ${BITMAP2COMPONENT_SRCS}
     ${BITMAP2COMPONENT_RESOURCES}
     )
+klicad_register_runtime_asset( bitmap2component )  # F-B2
 
 target_link_libraries( bitmap2component
     common

@@ -1058,6 +1058,7 @@ add_custom_command(
 # This is the second target we need to require the custom_command to generate and potentially run
 add_custom_target( bitmap_archive_build ALL
                 DEPENDS ${BITMAP_ARCHIVE_PATH})
+klicad_register_runtime_asset( bitmap_archive_build )  # F-B2
 
 install( FILES ${BITMAP_ARCHIVE_PATH}
     DESTINATION ${KICAD_DATA}/resources

@@ -24,6 +24,7 @@
 
 #include <memory>
 #include <mutex>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -862,6 +863,16 @@ private:
     std::unordered_map<wxString, std::vector<CONNECTION_SUBGRAPH*>> m_net_name_to_subgraphs_map;
 
     std::unordered_map<SCH_ITEM*, CONNECTION_SUBGRAPH*> m_item_to_subgraph_map;
+
+    /**
+     * F-S4b: items that reached propagateToNeighbors with an empty
+     * SCH_HIERLABEL::m_matchedEndpoint (or SCH_SHEET_PIN's inherited
+     * field).  RunERC walks this set and emits one
+     * ERCE_UNMATCHED_HIER_REFERENCE per entry — the loud-fail mode for
+     * cross-sheet propagation when compose() never resolved the typed
+     * sheet-pin↔hier-label KIID link.
+     */
+    std::unordered_set<SCH_ITEM*> m_unmatched_hier;
 
     NET_MAP m_net_code_to_subgraphs_map;
 

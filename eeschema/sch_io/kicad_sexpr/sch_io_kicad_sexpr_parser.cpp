@@ -4862,6 +4862,18 @@ SCH_TEXT* SCH_IO_KICAD_SEXPR_PARSER::parseSchText()
             NeedRIGHT();
             break;
 
+        case T_matched_endpoint:
+            // GOAL.md F-S4a: typed cross-sheet reference.  Only
+            // SCH_HIERLABEL carries this field; SCH_LABEL and the
+            // others reject it.
+            if( text->Type() != SCH_HIER_LABEL_T )
+                Unexpected( T_matched_endpoint );
+
+            NeedSYMBOL();
+            static_cast<SCH_HIERLABEL*>( text.get() )->SetMatchedEndpoint( parseKIID() );
+            NeedRIGHT();
+            break;
+
         case T_property:
         {
             if( text->Type() == SCH_TEXT_T )

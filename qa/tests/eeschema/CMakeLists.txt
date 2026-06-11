@@ -99,6 +99,7 @@ set( QA_EESCHEMA_SRCS
     test_eagle_plugin.cpp
     test_junction_helpers.cpp
     test_junction_place.cpp
+    test_wire_topology.cpp
     test_bus_alias_whitespace.cpp
     test_bus_entry_concurrency.cpp
     test_bus_net_name_determinism.cpp

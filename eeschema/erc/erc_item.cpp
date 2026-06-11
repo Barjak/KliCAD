@@ -85,6 +85,15 @@ ERC_ITEM ERC_ITEM::hierLabelMismatch( ERCE_HIERACHICAL_LABEL,
         _HKI( "Mismatch between hierarchical labels and sheet pins" ),
         wxT( "hier_label_mismatch" ) );
 
+// F-S4b: a SCH_SHEET_PIN or SCH_HIERLABEL reached CONNECTION_GRAPH
+// propagation with an empty m_matchedEndpoint KIID.  Cross-sheet
+// propagation is now reference-mediated (closure invariants 9 + 11);
+// an empty KIID means compose() never resolved the typed link, which
+// is loud-fail rather than silent-skip behaviour.
+ERC_ITEM ERC_ITEM::unmatchedHierReference( ERCE_UNMATCHED_HIER_REFERENCE,
+        _HKI( "Sheet pin or hierarchical label has no matched endpoint reference" ),
+        wxT( "unmatched_hier_reference" ) );
+
 ERC_ITEM ERC_ITEM::fourWayJunction( ERCE_FOUR_WAY_JUNCTION,
         _HKI( "Four connection points are joined together" ),
         wxT( "four_way_junction" ) );
@@ -329,6 +338,7 @@ std::shared_ptr<ERC_ITEM> ERC_ITEM::Create( int aErrorCode )
     case ERCE_GENERIC_WARNING:         return std::make_shared<ERC_ITEM>( genericWarning );
     case ERCE_GENERIC_ERROR:           return std::make_shared<ERC_ITEM>( genericError );
     case ERCE_HIERACHICAL_LABEL:       return std::make_shared<ERC_ITEM>( hierLabelMismatch );
+    case ERCE_UNMATCHED_HIER_REFERENCE: return std::make_shared<ERC_ITEM>( unmatchedHierReference );
     case ERCE_NOCONNECT_CONNECTED:     return std::make_shared<ERC_ITEM>( noConnectConnected );
     case ERCE_NOCONNECT_NOT_CONNECTED: return std::make_shared<ERC_ITEM>( noConnectDangling );
     case ERCE_FOUR_WAY_JUNCTION:       return std::make_shared<ERC_ITEM>( fourWayJunction );

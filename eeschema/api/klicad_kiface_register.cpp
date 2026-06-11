@@ -78,10 +78,10 @@ void klicad_register_eeschema_bindings()
             { "klicad_native_annotation",
               "KliCAD schematic annotation binding (kiface-loaded).",
               &klicad_register_annotation_bindings },
-            { "klicad_native_auto_layout",
-              "KliCAD port-aware OGDF-based schematic auto-layout "
-              "(kiface-loaded).  See HANDOFF.md Option C.",
-              &klicad_register_auto_layout_bindings },
+            // klicad_native_auto_layout: deleted in F-S3 Phase C
+            // (Fork 4 a) along with bindings_auto_layout.cpp and the
+            // _ogdf_layout.py + _klicad_sch.py Python modules.  The
+            // single-IPC compose path is the only entry now.
             { "klicad_native_hierarchy",
               "KliCAD schematic hierarchy / sheet navigation (kiface-loaded).",
               &klicad_register_hierarchy_bindings },
@@ -91,6 +91,10 @@ void klicad_register_eeschema_bindings()
             { "klicad_native_sch_actions",
               "KliCAD schematic-editor TOOL_ACTION runner (kiface-loaded).",
               &klicad_register_sch_actions_bindings },
+            { "klicad_native_schematic_compose",
+              "KliCAD F-S3 single-IPC schematic compose entry "
+              "(kiface-loaded).",
+              &klicad_register_schematic_compose_bindings },
             { "klicad_native_schematic_state",
               "KliCAD direct SCHEMATIC state binding (kiface-loaded).",
               &klicad_register_schematic_state_bindings },

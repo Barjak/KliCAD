@@ -373,6 +373,7 @@ set( EESCHEMA_SRCS
     bom_plugins.cpp
     bus-wire-junction.cpp
     connection_graph.cpp
+    connection_graph_bus_propagator.cpp
     cross-probing.cpp
     sch_design_block_utils.cpp
     eeschema_config.cpp
@@ -506,10 +507,10 @@ if( KICAD_IPC_API )
         ${EESCHEMA_SRCS}
         api/api_handler_sch.cpp
         api/bindings_annotation.cpp
-        api/bindings_auto_layout.cpp
         api/bindings_hierarchy.cpp
         api/bindings_ratsnest.cpp
         api/bindings_sch_actions.cpp
+        api/bindings_schematic_compose.cpp
         api/bindings_schematic_state.cpp
         api/bindings_sim_advanced.cpp
         api/bindings_simulator.cpp
@@ -667,6 +668,7 @@ add_dependencies( eeschema_kiface_objects klicad_auto_layout )
 add_library( eeschema_kiface MODULE
     eeschema.cpp
     )
+klicad_register_runtime_asset( eeschema_kiface )  # F-B2
 
 target_link_libraries( eeschema_kiface
     PRIVATE

@@ -108,6 +108,7 @@ add_library( pcb_calculator_kiface MODULE
     pcb_calculator.cpp
     ${PCB_CALCULATOR_SRCS}
     )
+klicad_register_runtime_asset( pcb_calculator_kiface )  # F-B2
 
 set_target_properties( pcb_calculator_kiface PROPERTIES
     OUTPUT_NAME     pcb_calculator

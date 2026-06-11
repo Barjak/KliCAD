@@ -163,17 +163,17 @@ endif()
 # build-dir-launch audit for the failure-mode classification this
 # replaces (`feedback_klicad_build_dir_assets.md` resolution).
 if( UNIX AND NOT APPLE )
-    add_dependencies( kicad
-        eeschema_kiface
-        pcbnew_kiface
-        cvpcb_kiface
-        gerbview_kiface
-        pl_editor_kiface
-        pcb_calculator_kiface
-        bitmap2component
-        api_schema_build_copy
-        bitmap_archive_build
-    )
+    # F-B2 — runtime asset dependencies are auto-collected.  Every
+    # subdirectory that defines a *_kiface MODULE, a *_schema_build_copy
+    # custom target, the bitmap_archive_build target, or bitmap2component
+    # calls klicad_register_runtime_asset(<target>) at its definition
+    # site (see KliCAD/cmake/KlicadRuntimeAssets.cmake).  This call wires
+    # them onto the kicad exe in one place.  Replaces the hand-curated
+    # list that previously sat here — the 2026-06-02 PCM-schema modal
+    # was exactly the kind of bug the hand list lets through.  Audit
+    # the inventory with:
+    #   grep -rn klicad_register_runtime_asset KliCAD/
+    klicad_apply_runtime_asset_deps( kicad )
 endif()
 
 if( APPLE )

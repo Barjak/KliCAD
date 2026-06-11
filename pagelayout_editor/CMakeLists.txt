@@ -107,6 +107,7 @@ add_library( pl_editor_kiface MODULE
     ${DIALOGS_SRCS}
     ${PL_EDITOR_EXTRA_SRCS}
     )
+klicad_register_runtime_asset( pl_editor_kiface )  # F-B2
 target_link_libraries( pl_editor_kiface
     gal
     common

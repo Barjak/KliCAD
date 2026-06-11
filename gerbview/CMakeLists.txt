@@ -160,6 +160,7 @@ add_dependencies( gerbview_kiface_objects gerbview_navlib )
 
 # the main gerbview program, in DSO form.
 add_library( gerbview_kiface MODULE )
+klicad_register_runtime_asset( gerbview_kiface )  # F-B2
 
 set_target_properties( gerbview_kiface PROPERTIES
     OUTPUT_NAME     gerbview

@@ -73,6 +73,7 @@ add_library( cvpcb_kiface MODULE
     ${CVPCB_DIALOGS}
     ${CVPCB_RESOURCES}
     )
+klicad_register_runtime_asset( cvpcb_kiface )  # F-B2
 
 set_target_properties( cvpcb_kiface PROPERTIES
     OUTPUT_NAME     cvpcb

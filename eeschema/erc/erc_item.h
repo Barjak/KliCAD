@@ -208,6 +208,7 @@ private:
     static ERC_ITEM genericWarning;
     static ERC_ITEM genericError;
     static ERC_ITEM hierLabelMismatch;
+    static ERC_ITEM unmatchedHierReference;
     static ERC_ITEM noConnectConnected;
     static ERC_ITEM fourWayJunction;
     static ERC_ITEM labelMultipleWires;

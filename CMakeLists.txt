@@ -63,6 +63,7 @@ set( KICAD_CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake" )
 set( CMAKE_MODULE_PATH       "${KICAD_CMAKE_MODULE_PATH}" )
 
 include( ConfigurePlatform )
+include( KlicadRuntimeAssets )  # F-B2 — see cmake/KlicadRuntimeAssets.cmake
 
 if( WIN32 )
     # Without WIN32_LEAN_AND_MEAN defined including windows.h pulls in legacy
@@ -1119,14 +1120,15 @@ add_subdirectory( thirdparty )
 add_subdirectory( libs )
 add_subdirectory( common )
 
-# OGDF fork at ../ogdf carrying our port-constraint extensions
-# (branch feature/port-constraints).  Sibling dir, not vendored,
-# because the fork is independently version-controlled.  Builds
-# libOGDF + libCOIN that the eeschema/auto_layout/ subsystem
-# links against.
-if( NOT TARGET OGDF )
-    add_subdirectory( "${CMAKE_CURRENT_SOURCE_DIR}/../ogdf"
-                      "${CMAKE_BINARY_DIR}/ogdf_build"
+# GOAL.md M5: OGDF retired 2026-06-02.  The ELK-cpp adapter at
+# eeschema/auto_layout/ is now the only schematic-layout backend.
+
+# JVM-free C++ port of ELK Layered at ../../elk-cpp/cpp (separate git
+# repo).  Builds `elk_core` (libelk_core.a) which the auto_layout
+# subsystem links via the new ELK adapter (GOAL.md gates 1-5).
+if( NOT TARGET elk_core )
+    add_subdirectory( "${CMAKE_CURRENT_SOURCE_DIR}/../../elk-cpp/cpp"
+                      "${CMAKE_BINARY_DIR}/elk_cpp_build"
                       EXCLUDE_FROM_ALL )
 endif()
 

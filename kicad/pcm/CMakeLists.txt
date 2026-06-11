@@ -52,6 +52,7 @@ if( NOT (${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_BINARY_DIR} ) )
         DEPENDS ${SCHEMA_FILES}
         COMMENT "Copying schema files into build directory"
         )
+    klicad_register_runtime_asset( schema_build_copy )  # F-B2
 endif()
 
 INSTALL( DIRECTORY
