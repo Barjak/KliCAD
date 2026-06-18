@@ -288,6 +288,22 @@ py::dict schematic_compose( const std::string& aSchPath,
             return report;
         }
 
+        // P3 fix: "replace" mode must yield a schematic that is EXACTLY the
+        // Circuit -- not the Circuit stacked on top of whatever the (possibly
+        // already-open, reused) screen still held.  compose_open_schematic is
+        // a no-op when the file is already open, so without this clear every
+        // compose APPENDS a fresh copy of every symbol/sheet.  That is the
+        // symbol-accumulation bug (5 -> 10 -> ... per run) and it is amplified
+        // by the IPC REQ-socket auto-retry: a slow compose gets resent and
+        // doubles the contents.  Clear the root screen before materializing;
+        // FreeDrawList also deletes accumulated SCH_SHEETs, releasing their
+        // child screens.  The post-compose HardRedraw rebuilds the view.
+        std::string mode = "replace";
+        if( aProgram.contains( "mode" ) )
+            mode = aProgram[ "mode" ].cast<std::string>();
+        if( mode == "replace" )
+            screen->Clear( /*aFree*/ true );
+
         // F-S3 invariant: one transaction wraps materialize + layout.
         // The adapter is forbidden to open its own (Fork 5 (a)).
         klicad::auto_layout::SchLayoutTransaction txn( *frame );
@@ -551,6 +567,93 @@ py::dict schematic_compose( const std::string& aSchPath,
                             pin->SetMatchedEndpoint( matchKiid );
                         }
                         ++portIdx;
+                    }
+                }
+
+                // M4 closure: materialize the child sub-circuit's parts
+                // on the child SCH_SCREEN (same shape as the parent's
+                // parts loop, just targeting childScreen instead of the
+                // root screen).  Each child part drops transient seed
+                // labels at its pin world coords; those labels carry
+                // child-local net names (e.g. "IN", "OUT", "VCC", "GND")
+                // and merge with the SCH_HIERLABELs already on the
+                // child screen via name fusion in CONNECTION_GRAPH.  The
+                // cross-sheet match to the parent's SHEET_PIN is via
+                // the KIID m_matchedEndpoint set above (F-S4b typed
+                // walk), not via the name.  Writeback removes the
+                // transient labels after layout.
+                SCH_SCREEN* childScreenForParts = sheet->GetScreen();
+                if( childScreenForParts && sheetDict.contains( "child_parts" ) )
+                {
+                    py::list childParts =
+                            sheetDict[ "child_parts" ].cast<py::list>();
+                    int childSeedIdx = 0;
+                    for( auto cpItem : childParts )
+                    {
+                        py::dict cpart = cpItem.cast<py::dict>();
+                        SCH_SYMBOL* csym = compose_make_symbol( frame, cpart );
+                        if( !csym )
+                            continue;
+
+                        const int crow = childSeedIdx / 8;
+                        const int ccol = childSeedIdx % 8;
+                        const VECTOR2I cseedPos(
+                                SEED_PITCH_IU * ( ccol + 2 ),
+                                SEED_PITCH_IU * ( crow + 2 ) );
+                        csym->SetPosition( cseedPos );
+
+                        // Add to child screen directly (not the root
+                        // screen via frame->AddToScreen, which would
+                        // place the child's symbol on the parent
+                        // sheet).
+                        childScreenForParts->Append( csym );
+
+                        if( cpart.contains( "connections" )
+                            && cpart.contains( "kicad_pin_map" ) )
+                        {
+                            py::dict cconns =
+                                    cpart[ "connections" ].cast<py::dict>();
+                            py::dict cpinMap =
+                                    cpart[ "kicad_pin_map" ].cast<py::dict>();
+
+                            for( auto connItem : cconns )
+                            {
+                                const std::string portName =
+                                        py::str( connItem.first ).cast<std::string>();
+                                const std::string netName =
+                                        py::str( connItem.second ).cast<std::string>();
+                                if( netName.empty() )
+                                    continue;
+                                if( !cpinMap.contains( portName.c_str() ) )
+                                    continue;
+                                const std::string pinNum =
+                                        cpinMap[ portName.c_str() ].cast<std::string>();
+
+                                const wxString wxPinNum =
+                                        wxString::FromUTF8( pinNum.c_str() );
+                                SCH_PIN* fp = nullptr;
+                                for( SCH_PIN* p : csym->GetPins() )
+                                {
+                                    if( p->GetNumber() == wxPinNum )
+                                    {
+                                        fp = p;
+                                        break;
+                                    }
+                                }
+                                if( !fp )
+                                    continue;
+
+                                const VECTOR2I pinWorld = fp->GetPosition();
+                                const wxString labelText =
+                                        wxString::FromUTF8( netName.c_str() );
+
+                                SCH_LABEL* clabel =
+                                        new SCH_LABEL( pinWorld, labelText );
+                                childScreenForParts->Append( clabel );
+                            }
+                        }
+
+                        ++childSeedIdx;
                     }
                 }
 
