@@ -242,6 +242,18 @@ std::unique_ptr<ElkNode> ElkHierarchyBuilder::build( SCH_EDIT_FRAME& aFrame )
         if( singleSheet )
             return root.get();
 
+        // The root sheet IS the top-level ELK graph, not a nested compound.
+        // Putting root symbols inside a root-path compound makes every
+        // parent<->child net an edge from one compound's interior to a
+        // sibling compound's port -- a multi-level crossing ELK Layered
+        // rejects, which leaves the child compound's far boundary port
+        // without an external-port dummy (the "more hierarchical ports than
+        // dummies" failure).  Only child sheets (deeper paths) get compounds;
+        // the root path maps to the top-level graph so root symbols sit at
+        // the same level as the child compounds they connect to.
+        if( aPath.size() <= 1 )
+            return root.get();
+
         auto it = compoundByPath.find( aPath );
         if( it != compoundByPath.end() )
             return it->second;
@@ -255,6 +267,14 @@ std::unique_ptr<ElkNode> ElkHierarchyBuilder::build( SCH_EDIT_FRAME& aFrame )
         // empirically don't route the intra-compound edges.
         compound->setProperty( lo::HIERARCHY_HANDLING(),
                                co::HierarchyHandling::INCLUDE_CHILDREN );
+        // Boundary ports get explicit FIXED_SIDE placement (assigned in Pass 4
+        // below).  Without it, the two ends of a 2-port child sheet both vote
+        // -- via net flow -- onto the same side, where ELK then creates a
+        // single external-port dummy for two same-side hierarchical ports
+        // ("more hierarchical ports than dummies").  Distributing them across
+        // sides gives one dummy per port.
+        compound->setProperty( co::CoreOptions::PORT_CONSTRAINTS(),
+                               co::PortConstraints::FIXED_SIDE );
         compoundByPath.emplace( aPath, compound );
         return compound;
     };
@@ -354,6 +374,17 @@ std::unique_ptr<ElkNode> ElkHierarchyBuilder::build( SCH_EDIT_FRAME& aFrame )
         // on the path's penultimate sheet's screen.  Walk its pins.
         if( path.size() >= 1 )
         {
+            // Distribute boundary ports across WEST/EAST so a 2-port child
+            // sheet doesn't collide both ports on one side.  Counter spans the
+            // sheet-pin and hier-label loops for this compound.
+            int boundarySideIdx = 0;
+            auto assignSide = [&]( ElkPort* aPort )
+            {
+                aPort->setProperty( co::CoreOptions::PORT_SIDE(),
+                                    ( boundarySideIdx++ % 2 == 0 )
+                                        ? co::PortSide::WEST : co::PortSide::EAST );
+            };
+
             SCH_SHEET* leafSheet = path.Last();
             if( leafSheet )
             {
@@ -366,6 +397,7 @@ std::unique_ptr<ElkNode> ElkHierarchyBuilder::build( SCH_EDIT_FRAME& aFrame )
                             ( wxT("sheet_pin:") + sp->m_Uuid.AsString() )
                                     .ToStdString() );
                     port->setDimensions( 0.0, 0.0 );
+                    assignSide( port );
                     portByBoundaryKiid[sp->m_Uuid] = port;
 
                     // F-S5 port unification: a cross-sheet crossing is ONE
@@ -405,6 +437,7 @@ std::unique_ptr<ElkNode> ElkHierarchyBuilder::build( SCH_EDIT_FRAME& aFrame )
                             ( wxT("hier_label:") + item->m_Uuid.AsString() )
                                     .ToStdString() );
                     port->setDimensions( 0.0, 0.0 );
+                    assignSide( port );
                     portByBoundaryKiid[item->m_Uuid] = port;
                 }
             }
@@ -486,11 +519,16 @@ std::unique_ptr<ElkNode> ElkHierarchyBuilder::build( SCH_EDIT_FRAME& aFrame )
         ++edgesBuilt;
     }
 
+    std::set<ElkPort*> distinctBoundaryPorts;
+    for( const auto& [kid, bport] : portByBoundaryKiid )
+        distinctBoundaryPorts.insert( bport );
+
     std::fprintf( stderr,
                   "[elk_hierarchy_builder] %zu compounds, %zu symbols, "
-                  "%zu boundary ports, %d nets\n",
+                  "%zu boundary kiids (%zu DISTINCT ports), %d nets\n",
                   compoundByPath.size(), symbols.size(),
-                  portByBoundaryKiid.size(), edgesBuilt );
+                  portByBoundaryKiid.size(), distinctBoundaryPorts.size(),
+                  edgesBuilt );
 
     return root;
 }
