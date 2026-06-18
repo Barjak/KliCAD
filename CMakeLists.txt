@@ -508,6 +508,48 @@ if( CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang" )
         set( CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wp,-D_GLIBCXX_ASSERTIONS" )
     endif()
 
+    # -----------------------------------------------------------------------
+    # Loud guardrail: warn at configure time when an EXPENSIVE build option is
+    # active.  ASan/TSan, Debug (-O0), full -g3 debug info, and libstdc++
+    # debug are correct for crash/UAF hunting but cripple the routine
+    # develop/build/test loop: slow startup, 2-3x RAM, 750MB+ kifaces, slow
+    # links.  A silently-set expensive config once starved the 16GB dev box
+    # and masqueraded as "KliCAD is slow".  Make it impossible to set by
+    # accident -- every configure of such a tree prints this banner.
+    # -----------------------------------------------------------------------
+    set( _kicad_expensive_opts "" )
+    if( KICAD_SANITIZE_ADDRESS OR CMAKE_CXX_FLAGS MATCHES "fsanitize=address" )
+        list( APPEND _kicad_expensive_opts "AddressSanitizer (-fsanitize=address): ~2-3x RAM, slow startup" )
+    endif()
+    if( KICAD_SANITIZE_THREADS OR CMAKE_CXX_FLAGS MATCHES "fsanitize=thread" )
+        list( APPEND _kicad_expensive_opts "ThreadSanitizer (-fsanitize=thread): heavy RAM + slowdown" )
+    endif()
+    if( CMAKE_BUILD_TYPE STREQUAL "Debug" )
+        list( APPEND _kicad_expensive_opts "CMAKE_BUILD_TYPE=Debug (-O0): unoptimized, large binaries" )
+        if( NOT KICAD_BUILD_SMALL_DEBUG_FILES )
+            list( APPEND _kicad_expensive_opts "Full debug info -g3 (set KICAD_BUILD_SMALL_DEBUG_FILES=ON to shrink): huge kifaces, slow links" )
+        endif()
+    endif()
+    if( KICAD_STDLIB_DEBUG )
+        list( APPEND _kicad_expensive_opts "KICAD_STDLIB_DEBUG (_GLIBCXX_DEBUG): ABI-changing, slow" )
+    endif()
+
+    if( _kicad_expensive_opts )
+        string( REPLACE ";" "\n  *  " _kicad_expensive_list "${_kicad_expensive_opts}" )
+        message( WARNING
+            "\n"
+            "===================================================================\n"
+            "  !!!  EXPENSIVE BUILD OPTIONS ARE ACTIVE  !!!\n"
+            "===================================================================\n"
+            "  *  ${_kicad_expensive_list}\n"
+            "-------------------------------------------------------------------\n"
+            "  This build will be SLOW to start and MEMORY-HUNGRY.  That is the\n"
+            "  right trade for crash/UAF hunting, and wrong for routine work.\n"
+            "  For a fast iteration loop, configure a SEPARATE build dir as\n"
+            "  RelWithDebInfo with none of the above (no -fsanitize, not Debug).\n"
+            "===================================================================" )
+    endif()
+
     if( MINGW )
         list(APPEND mingw_resource_compiler_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/resources/msw/ )
         # include dir to allow getting the version header
