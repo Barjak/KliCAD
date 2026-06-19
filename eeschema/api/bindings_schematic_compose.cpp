@@ -50,6 +50,8 @@
 #include <pybind11/embed.h>
 #include <pybind11/stl.h>
 
+#include <wx/filename.h>
+
 #include <frame_type.h>
 #include <kiway.h>
 #include <kiway_holder.h>
@@ -464,7 +466,31 @@ py::dict schematic_compose( const std::string& aSchPath,
                 {
                     const std::string fn =
                             sheetDict[ "definition_filename" ].cast<std::string>();
-                    sheet->SetFileName( wxString::FromUTF8( fn.c_str() ) );
+                    const wxString wxFn = wxString::FromUTF8( fn.c_str() );
+                    sheet->SetFileName( wxFn );
+
+                    // The SCH_SHEET carries the (relative) filename for the
+                    // s-expr reference, but the child SCH_SCREEN itself must
+                    // also carry an absolute on-disk filename or SCH_EDIT_FRAME
+                    // ::SaveProject SKIPS it: PrepareSaveAsFiles /
+                    // implicit-save iterate SCH_SCREENS and `continue` past any
+                    // screen whose GetFileName() is not wxFileName::IsOk()
+                    // (files-io.cpp ~1382).  Without this the child .kicad_sch
+                    // is never written, so kicad-cli sch erc reads an absent /
+                    // empty child sheet → the child hier-labels + parts vanish
+                    // and every cross-sheet pin reports pin_not_connected /
+                    // hier_label_mismatch.  Resolve against the root screen's
+                    // directory so the child lands beside the parent file.
+                    if( SCH_SCREEN* childScreen = sheet->GetScreen() )
+                    {
+                        wxFileName childFn( wxFn );
+                        if( !childFn.IsAbsolute() )
+                        {
+                            wxFileName rootFn( screen->GetFileName() );
+                            childFn.MakeAbsolute( rootFn.GetPath() );
+                        }
+                        childScreen->SetFileName( childFn.GetFullPath() );
+                    }
                 }
 
                 frame->AddToScreen( sheet, screen );

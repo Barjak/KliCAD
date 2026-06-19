@@ -267,14 +267,6 @@ std::unique_ptr<ElkNode> ElkHierarchyBuilder::build( SCH_EDIT_FRAME& aFrame )
         // empirically don't route the intra-compound edges.
         compound->setProperty( lo::HIERARCHY_HANDLING(),
                                co::HierarchyHandling::INCLUDE_CHILDREN );
-        // Boundary ports get explicit FIXED_SIDE placement (assigned in Pass 4
-        // below).  Without it, the two ends of a 2-port child sheet both vote
-        // -- via net flow -- onto the same side, where ELK then creates a
-        // single external-port dummy for two same-side hierarchical ports
-        // ("more hierarchical ports than dummies").  Distributing them across
-        // sides gives one dummy per port.
-        compound->setProperty( co::CoreOptions::PORT_CONSTRAINTS(),
-                               co::PortConstraints::FIXED_SIDE );
         compoundByPath.emplace( aPath, compound );
         return compound;
     };
@@ -368,81 +360,34 @@ std::unique_ptr<ElkNode> ElkHierarchyBuilder::build( SCH_EDIT_FRAME& aFrame )
         }
     }
 
-    for( auto& [path, compound] : compoundByPath )
-    {
-        // Parent-facing: the SCH_SHEET item that hosts this path lives
-        // on the path's penultimate sheet's screen.  Walk its pins.
-        if( path.size() >= 1 )
-        {
-            // Distribute boundary ports across WEST/EAST so a 2-port child
-            // sheet doesn't collide both ports on one side.  Counter spans the
-            // sheet-pin and hier-label loops for this compound.
-            int boundarySideIdx = 0;
-            auto assignSide = [&]( ElkPort* aPort )
-            {
-                aPort->setProperty( co::CoreOptions::PORT_SIDE(),
-                                    ( boundarySideIdx++ % 2 == 0 )
-                                        ? co::PortSide::WEST : co::PortSide::EAST );
-            };
-
-            SCH_SHEET* leafSheet = path.Last();
-            if( leafSheet )
-            {
-                for( SCH_SHEET_PIN* sp : leafSheet->GetPins() )
-                {
-                    if( !sp )
-                        continue;
-                    ElkPort* port = ElkGraphUtil::createPort( compound );
-                    port->setIdentifier(
-                            ( wxT("sheet_pin:") + sp->m_Uuid.AsString() )
-                                    .ToStdString() );
-                    port->setDimensions( 0.0, 0.0 );
-                    assignSide( port );
-                    portByBoundaryKiid[sp->m_Uuid] = port;
-
-                    // F-S5 port unification: a cross-sheet crossing is ONE
-                    // external port in ELK's compound model, not a sheet-pin
-                    // port plus a hier-label port.  Two ports per crossing
-                    // leave two INSIDE_CONNECTIONS ports on the boundary but
-                    // only one external-port dummy, which trips ELK's
-                    // layer-sweep (sortPortDummiesByPortPositions: more
-                    // hierarchical ports than dummies).  Map the matched
-                    // child-side hier label (F-S4b bidirectional cross-link)
-                    // onto this same port so the hier-label loop below reuses
-                    // it instead of minting a second boundary port.
-                    const KIID& matched = sp->GetMatchedEndpoint();
-                    if( matched != niluuid )
-                        portByBoundaryKiid[matched] = port;
-                }
-            }
-
-            // Child-side: SCH_HIER_LABEL items on the leaf sheet's
-            // own screen become ports on the same compound.  ELK
-            // sees these as additional terminals on the boundary;
-            // the writeback resolves them post-layout.
-            SCH_SCREEN* leafScreen = path.LastScreen();
-            if( leafScreen )
-            {
-                for( SCH_ITEM* item : leafScreen->Items().OfType( SCH_HIER_LABEL_T ) )
-                {
-                    if( !item )
-                        continue;
-                    // Already unified onto its matched sheet pin's port above?
-                    // Reuse it — don't mint a second boundary port for the
-                    // same crossing (see the F-S5 port-unification note).
-                    if( portByBoundaryKiid.count( item->m_Uuid ) )
-                        continue;
-                    ElkPort* port = ElkGraphUtil::createPort( compound );
-                    port->setIdentifier(
-                            ( wxT("hier_label:") + item->m_Uuid.AsString() )
-                                    .ToStdString() );
-                    port->setDimensions( 0.0, 0.0 );
-                    assignSide( port );
-                    portByBoundaryKiid[item->m_Uuid] = port;
-                }
-            }
-        }
-    }
+    // NOTE: compound (multi-sheet) boundaries get NO manually-minted ELK
+    // ports here.  A cross-sheet net is expressed in Pass 5 as a single
+    // DIRECT cross-hierarchy edge (an inside child-symbol pin → an outside
+    // root-symbol pin).  ELK's compound preprocessor (ElkGraphImporter +
+    // the hierarchical layer-sweep) splits that edge at the compound border
+    // and creates exactly one EXTERNAL_PORT *dummy* with its matching
+    // hierarchical LPort — the known-good model exercised by
+    // elk-cpp/.../test_hierarchical_import.cpp.
+    //
+    // The previous F-S5 model minted an ElkPort per crossing on the compound
+    // AND a "degree-2 bridge" (inside edge insidePin→port, outside edge
+    // port→root-sibling).  ELK imports each manual external ElkPort as an
+    // EXTERNAL_PORT dummy *inside* the compound, so the bridge's "outside"
+    // edge then ran dummy→root-sibling = a fresh cross-hierarchy edge that
+    // the preprocessor re-split into a SECOND external port on the same
+    // compound.  Result: 2 manual ports → 4 hierarchical ports, none of
+    // which carries PORT_DUMMY, tripping
+    // LayerSweepCrossingMinimizer::sortPortDummiesByPortPositions
+    // ("more hierarchical ports than dummies").  Letting the preprocessor
+    // own the entire boundary representation yields #ports == #dummies by
+    // construction.
+    //
+    // The writeback (sch_elk_adapter.cpp) does NOT read boundary-port
+    // identifiers back: it emits wires from edge sections (forcing the
+    // symbol-pin endpoints to their post-move world coords) and one
+    // SCH_LABEL per named signal net, which is what carries cross-sheet
+    // connectivity for ERC.  So dropping the manual sheet_pin:/hier_label:
+    // ports loses no writeback identity.
 
     // ------------------------------------------------------------------
     // Pass 5: edges.  One star-pattern fan-out per NetView with ≥2
@@ -457,15 +402,17 @@ std::unique_ptr<ElkNode> ElkHierarchyBuilder::build( SCH_EDIT_FRAME& aFrame )
     int edgesBuilt = 0;
     for( const NetView& nv : m_proj.nets() )
     {
-        // Collect every port that participates in this net: symbol
-        // pins (via portByNum) + boundary ports (sheet pins, hier
-        // labels) via portByBoundaryKiid.  Without the boundary side,
-        // M4 nets that cross from a symbol pin into a sheet pin have
-        // only one reachable port and never get routed → wire-emit
-        // count stays at 0.
-        std::vector<ElkPort*> pinPorts;
-        pinPorts.reserve( nv.pins.size() );
-
+        // Collect every symbol-pin port that participates in this net,
+        // grouped by the ELK level (compound) it lives in.  The grouping
+        // key is the containing compound ElkNode*: symbols on the same
+        // sheet path share a compound (getCompound is memoised per path),
+        // and the single-sheet/root path maps to root.  Pins in the SAME
+        // group are starred together (intra-level edges); ONE direct edge
+        // between two group anchors expresses a cross-hierarchy crossing,
+        // which ELK's compound preprocessor splits into an EXTERNAL_PORT
+        // dummy + its hierarchical LPort.
+        std::map<ElkNode*, std::vector<ElkPort*>> portsByLevel;
+        std::vector<ElkNode*> levelOrder;   // stable: first-seen order
         for( const PinKey& pk : nv.pins )
         {
             auto symIt = symbols.find( pk.symbol_uuid );
@@ -474,61 +421,72 @@ std::unique_ptr<ElkNode> ElkHierarchyBuilder::build( SCH_EDIT_FRAME& aFrame )
             auto portIt = symIt->second.portByNum.find( pk.pin_number );
             if( portIt == symIt->second.portByNum.end() )
                 continue;
-            pinPorts.push_back( portIt->second );
+            ElkNode* level = getCompound( symIt->second.path );
+            auto [lit, inserted] = portsByLevel.try_emplace( level );
+            if( inserted )
+                levelOrder.push_back( level );
+            lit->second.push_back( portIt->second );
         }
 
-        // Deduplicate boundary ports: after F-S5 unification a crossing's
-        // sheet-pin KIID and hier-label KIID resolve to the SAME ElkPort,
-        // so a NetView that lists both must not enrol that port twice.
-        std::vector<ElkPort*> boundaryPorts;
+        // Single-sheet sheet-node boundary ports (Pass 4 singleSheet
+        // branch): these sit on a sibling sheet-node at root level, not on
+        // a compound.  Enrol them into the root level's group so the net
+        // routes from symbol pins to the sheet pins.  No compound crossing
+        // is involved in single-sheet mode.
         std::set<ElkPort*> seenBoundaryPort;
         for( const KIID& kid : nv.boundary_kiids )
         {
             auto bit = portByBoundaryKiid.find( kid );
             if( bit == portByBoundaryKiid.end() )
                 continue;
-            if( seenBoundaryPort.insert( bit->second ).second )
-                boundaryPorts.push_back( bit->second );
+            if( !seenBoundaryPort.insert( bit->second ).second )
+                continue;
+            auto [lit, inserted] = portsByLevel.try_emplace( root.get() );
+            if( inserted )
+                levelOrder.push_back( root.get() );
+            lit->second.push_back( bit->second );
         }
 
-        if( pinPorts.size() + boundaryPorts.size() < 2 )
+        std::size_t totalPorts = 0;
+        for( const auto& [lvl, ports] : portsByLevel )
+            totalPorts += ports.size();
+        if( totalPorts < 2 )
             continue;
 
-        // Anchor the star at a boundary port when the net crosses a sheet:
-        // child pins then connect TO the external port (inside connections)
-        // and the parent-side pin connects to the SAME port (outside
-        // connection) — the compound-port shape ELK expects, yielding one
-        // external-port dummy per crossing.  Pure intra-sheet nets keep a
-        // pin anchor (unchanged M2/M3 behaviour).
-        ElkPort* anchor = !boundaryPorts.empty() ? boundaryPorts.front()
-                                                 : pinPorts.front();
-
-        auto connect = [&]( ElkPort* aPort )
+        auto addEdge = [&]( ElkPort* a, ElkPort* b )
         {
-            if( aPort == anchor )
-                return;
-            ElkEdge* edge = ElkGraphUtil::createSimpleEdge( anchor, aPort );
+            ElkEdge* edge = ElkGraphUtil::createSimpleEdge( a, b );
             edge->setIdentifier( nv.name.ToStdString() );
         };
 
-        for( ElkPort* p : pinPorts )
-            connect( p );
-        for( ElkPort* p : boundaryPorts )
-            connect( p );
+        // Star within each level (anchor = ports[0]); collect each level's
+        // anchor in stable order.
+        std::vector<ElkPort*> levelAnchors;
+        for( ElkNode* lvl : levelOrder )
+        {
+            const std::vector<ElkPort*>& ports = portsByLevel[lvl];
+            for( std::size_t k = 1; k < ports.size(); ++k )
+                addEdge( ports[0], ports[k] );
+            levelAnchors.push_back( ports[0] );
+        }
+
+        // Chain the level anchors with ONE direct edge each.  When two
+        // anchors live in different compounds, that edge is a cross-
+        // hierarchy crossing; ELK creates exactly one external port +
+        // dummy per such edge (#hierarchical-ports == #dummies by
+        // construction).  An intra-level net (one group) has no chaining
+        // edge and falls through unchanged (M2/M3 behaviour preserved).
+        for( std::size_t k = 1; k < levelAnchors.size(); ++k )
+            addEdge( levelAnchors[k - 1], levelAnchors[k] );
 
         ++edgesBuilt;
     }
 
-    std::set<ElkPort*> distinctBoundaryPorts;
-    for( const auto& [kid, bport] : portByBoundaryKiid )
-        distinctBoundaryPorts.insert( bport );
-
     std::fprintf( stderr,
                   "[elk_hierarchy_builder] %zu compounds, %zu symbols, "
-                  "%zu boundary kiids (%zu DISTINCT ports), %d nets\n",
+                  "%zu boundary kiids, %d nets\n",
                   compoundByPath.size(), symbols.size(),
-                  portByBoundaryKiid.size(), distinctBoundaryPorts.size(),
-                  edgesBuilt );
+                  portByBoundaryKiid.size(), edgesBuilt );
 
     return root;
 }
